@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./gemnote-fixed
     
     steps:
     - uses: actions/checkout@v4
@@ -31,4 +34,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: gemnote-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: gemnote-fixed/app/build/outputs/apk/debug/app-debug.apk
