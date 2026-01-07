@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <color name="connected_bg">#E8F5E9</color>
+    <color name="disconnected_bg">#FFEBEE</color>
+    <color name="synced_bg">#E3F2FD</color>
+    <color name="synced_text">#1976D2</color>
+</resources>

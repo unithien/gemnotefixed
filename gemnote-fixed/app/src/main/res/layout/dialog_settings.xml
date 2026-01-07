@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Anytype API Key">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/apiKeyInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textPassword" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="Anytype URL">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/baseUrlInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textUri" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="💡 Enter your PC's local IP address where Anytype is running (e.g., http://192.168.1.100:31009)"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray" />
+
+</LinearLayout>

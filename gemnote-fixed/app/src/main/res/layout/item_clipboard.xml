@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardElevation="2dp"
+    app:cardCornerRadius="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/timestampText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:textColor="@android:color/darker_gray" />
+
+            <TextView
+                android:id="@+id/syncedBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✓ Synced"
+                android:textSize="12sp"
+                android:textColor="@color/synced_text"
+                android:background="@color/synced_bg"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Preview -->
+        <TextView
+            android:id="@+id/previewText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:textSize="14sp" />
+
+        <!-- Actions -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/deleteButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Delete"
+                style="@style/Widget.Material3.Button.TextButton" />
+
+            <Button
+                android:id="@+id/sendButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Send"
+                style="@style/Widget.Material3.Button" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
