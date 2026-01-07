@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -292,12 +293,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        val title = entry.content.lines().firstOrNull()?.take(50)?.trimStart('#', ' ') ?: "Note"
+        val title = entry.content.lines().firstOrNull()?.take(50)?.trimStart('#', ' ') ?: "Note from GemNote"
         
         lifecycleScope.launch {
             try {
                 val api = createApi(getBaseUrl(), getApiKey())
-                val request = CreateObjectRequest(name = title, body = entry.content)
+                val request = CreateObjectRequest(
+                    name = title,
+                    objectTypeUniqueKey = "ot-note",
+                    description = entry.content
+                )
                 val response = withContext(Dispatchers.IO) { 
                     api.createObject(selectedSpaceId, request) 
                 }
@@ -308,7 +313,8 @@ class MainActivity : AppCompatActivity() {
                     updateUI()
                     Toast.makeText(this@MainActivity, "Sent: $title", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Failed: ${response.code()}", Toast.LENGTH_SHORT).show()
+                    val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                    Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -396,11 +402,14 @@ data class ClipEntry(
 
 data class Space(val id: String, val name: String)
 data class ApiResponse<T>(val data: T?)
+
 data class CreateObjectRequest(
     val name: String,
-    val body: String,
-    val icon: String = "clipboard",
-    val type_key: String = "ot-note"
+    @SerializedName("object_type_unique_key")
+    val objectTypeUniqueKey: String,
+    val description: String? = null,
+    val body: String? = null,
+    val icon: String? = null
 )
 
 interface AnytypeApi {
