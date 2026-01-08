@@ -204,23 +204,19 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus() {
         when {
             isScanning -> {
-                statusText.text = "🔍 Scanning network..."
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_blue_dark))
+                statusText.text = "\uD83D\uDD0D Scanning network..."
                 btnConnect.text = "Scanning..."
             }
             isConnected && selectedSpaceName.isNotEmpty() -> {
-                statusText.text = "✓ Connected to: $selectedSpaceName"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
+                statusText.text = "\u2713 Connected to: $selectedSpaceName"
                 btnConnect.text = "Change Space"
             }
             isConnected -> {
-                statusText.text = "✓ Connected - Select a space"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_dark))
+                statusText.text = "\u2713 Connected - Select a space"
                 btnConnect.text = "Select Space"
             }
             else -> {
                 statusText.text = "Not connected"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
                 btnConnect.text = "Connect"
             }
         }
@@ -246,7 +242,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showConnectionOptions() {
-        val options = arrayOf("🔍 Auto-scan network", "⚙️ Manual settings")
+        val options = arrayOf("\uD83D\uDD0D Auto-scan network", "\u2699\uFE0F Manual settings")
         
         AlertDialog.Builder(this)
             .setTitle("Connect to Anytype")
@@ -367,7 +363,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        val names = objectTypes.map { "${it.icon?.emoji ?: "📄"} ${it.name}" }.toTypedArray()
+        val names = objectTypes.map { "${it.icon?.emoji ?: "\uD83D\uDCC4"} ${it.name}" }.toTypedArray()
         
         AlertDialog.Builder(this)
             .setTitle("Select Object Type")
@@ -573,7 +569,7 @@ class MainActivity : AppCompatActivity() {
                     name = title,
                     typeKey = selectedTypeKey,
                     body = body,
-                    icon = ObjectIcon(emoji = "📝", format = "emoji")
+                    icon = ObjectIcon(emoji = "\uD83D\uDCDD", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) { 
                     api.createObject(selectedSpaceId, request) 
@@ -711,7 +707,8 @@ class EntryAdapter(
         holder.tvTime.text = dateFormat.format(Date(entry.timestamp))
         holder.tvPreview.text = entry.preview
         holder.tvSynced.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
-        holder.btnSend.isEnabled = !entry.isSynced
+        // Always keep Send button enabled so user can send multiple times
+        holder.btnSend.isEnabled = true
         holder.btnSend.text = if (entry.isSynced) "Sent" else "Send"
         holder.btnSend.setOnClickListener { onSendClick(entry) }
         holder.btnDelete.setOnClickListener { onDeleteClick(entry) }
