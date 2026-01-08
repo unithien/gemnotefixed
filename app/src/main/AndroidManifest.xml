@@ -35,6 +35,10 @@
             android:name=".ClipboardService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+            
+        <service
+            android:name=".FloatingWindowService"
+            android:exported="false" />
 
     </application>
 

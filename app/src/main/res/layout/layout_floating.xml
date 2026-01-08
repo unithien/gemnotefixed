@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/floatingRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <androidx.cardview.widget.CardView
+        android:id="@+id/floatingCard"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="#F5F0FF">
+
+        <LinearLayout
+            android:layout_width="280dp"
+            android:layout_height="400dp"
+            android:orientation="vertical">
+
+            <!-- Header with drag handle and close button -->
+            <LinearLayout
+                android:id="@+id/floatingHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="8dp"
+                android:background="#6B4EAA">
+
+                <!-- Drag handle icon -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⠿"
+                    android:textSize="18sp"
+                    android:textColor="#FFFFFF"
+                    android:paddingEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/floatingStatus"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="GemNote"
+                    android:textSize="12sp"
+                    android:textColor="#FFFFFF"
+                    android:singleLine="true"/>
+
+                <ImageButton
+                    android:id="@+id/btnClose"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:contentDescription="Close"
+                    app:tint="#FFFFFF"/>
+            </LinearLayout>
+
+            <!-- Content area -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/floatingRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:padding="4dp"
+                    android:clipToPadding="false"/>
+
+                <TextView
+                    android:id="@+id/floatingEmptyView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="No entries\n\nTap + to paste"
+                    android:textSize="12sp"
+                    android:textColor="#888888"/>
+            </FrameLayout>
+
+            <!-- Bottom buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="8dp"
+                android:background="#FFFFFF"
+                android:gravity="center_vertical">
+
+                <ImageButton
+                    android:id="@+id/floatingFabPaste"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/floating_button_bg"
+                    android:src="@android:drawable/ic_input_add"
+                    android:contentDescription="Paste"
+                    app:tint="#6B4EAA"/>
+
+                <Button
+                    android:id="@+id/floatingBtnType"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:text="Note"
+                    android:textSize="11sp"
+                    android:backgroundTint="#6B4EAA"
+                    android:textColor="#FFFFFF"/>
+            </LinearLayout>
+
+            <!-- Resize handle -->
+            <View
+                android:id="@+id/resizeHandle"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:background="#D8D0F0"/>
+
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+</FrameLayout>

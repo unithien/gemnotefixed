@@ -2,9 +2,11 @@ package com.gemnote
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -89,6 +91,15 @@ class MainActivity : AppCompatActivity() {
     private var selectedTypeName = "Note"
     private var isConnected = false
     private var isScanning = false
+    
+    // Receiver for floating window close event
+    private val floatingClosedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            floatingToggle.isChecked = false
+            // Reload entries in case they were modified in floating window
+            loadEntries()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,11 +111,29 @@ class MainActivity : AppCompatActivity() {
         loadEntries()
         loadSettings()
         
+        // Register broadcast receiver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(floatingClosedReceiver, IntentFilter("com.gemnote.FLOATING_CLOSED"), RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(floatingClosedReceiver, IntentFilter("com.gemnote.FLOATING_CLOSED"))
+        }
+        
         handleShareIntent(intent)
         
         if (getApiKey().isNotEmpty()) {
             autoConnect()
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(floatingClosedReceiver)
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Reload entries when coming back to the app
+        loadEntries()
     }
     
     override fun onNewIntent(intent: Intent?) {
@@ -214,13 +243,18 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startFloatingWindow() {
-        // Will be implemented in Step 2
-        Toast.makeText(this, "Floating mode: ON (Step 2 needed)", Toast.LENGTH_SHORT).show()
+        // Start floating window service
+        val intent = Intent(this, FloatingWindowService::class.java)
+        startService(intent)
+        
+        // Minimize app to background
+        moveTaskToBack(true)
     }
     
     private fun stopFloatingWindow() {
-        // Will be implemented in Step 2
-        Toast.makeText(this, "Floating mode: OFF", Toast.LENGTH_SHORT).show()
+        // Stop floating window service
+        val intent = Intent(this, FloatingWindowService::class.java)
+        stopService(intent)
     }
     
     private fun loadSettings() {
