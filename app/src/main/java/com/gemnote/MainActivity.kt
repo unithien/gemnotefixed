@@ -118,11 +118,8 @@ class MainActivity : AppCompatActivity() {
             onDeleteClick = { entry -> deleteEntry(entry) }
         )
         
-        // Stack items from bottom (near the toolbar) for left-handed users
-        val layoutManager = LinearLayoutManager(this)
-        layoutManager.reverseLayout = true
-        layoutManager.stackFromEnd = true
-        recyclerView.layoutManager = layoutManager
+        // Normal layout - items will be at bottom due to layout_gravity in XML
+        recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
         
         btnConnect.setOnClickListener {

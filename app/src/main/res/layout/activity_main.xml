@@ -24,7 +24,7 @@
             android:textColor="#FFFFFF"/>
     </LinearLayout>
 
-    <!-- Content area with RecyclerView -->
+    <!-- Content area with RecyclerView anchored to bottom -->
     <FrameLayout
         android:id="@+id/contentArea"
         android:layout_width="match_parent"
@@ -35,7 +35,8 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
             android:padding="8dp"
             android:clipToPadding="false"/>
 
