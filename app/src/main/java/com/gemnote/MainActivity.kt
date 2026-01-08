@@ -40,7 +40,6 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
-import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import java.text.SimpleDateFormat
@@ -483,7 +482,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        val title = entry.content.lines().firstOrNull()?.take(50)?.trimStart('#', ' ') ?: "Note from GemNote"
+        // Split content into title (first line) and body (rest)
+        val lines = entry.content.lines()
+        val title = lines.firstOrNull()?.take(100)?.trimStart('#', ' ') ?: "Note from GemNote"
+        
+        // Body is everything after the first line (if any)
+        val body = if (lines.size > 1) {
+            lines.drop(1).joinToString("\n").trim()
+        } else {
+            null  // No body if only one line
+        }
         
         lifecycleScope.launch {
             try {
@@ -491,7 +499,7 @@ class MainActivity : AppCompatActivity() {
                 val request = CreateObjectRequest(
                     name = title,
                     typeKey = "note",
-                    body = entry.content,
+                    body = body,
                     icon = ObjectIcon(emoji = "📝", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) { 
