@@ -22,7 +22,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -205,7 +204,9 @@ class FloatingWindowService : Service() {
             textSize = 18f
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dpToPx(50), dpToPx(40))
-            setOnTouchListener(createTapListener { closeFloatingWindow() })
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { closeFloatingWindow() }
         }
         header.addView(closeBtn)
         
@@ -230,73 +231,69 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR using FrameLayout with absolute positions =====
-        val bottomBarHeight = dpToPx(64)
-        val bottomBar = FrameLayout(this).apply {
+        // ===== BOTTOM BAR =====
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                bottomBarHeight
-            )
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // Button dimensions
-        val btnHeight = dpToPx(44)
-        val btnTop = (bottomBarHeight - btnHeight) / 2
-        val pasteBtnSize = dpToPx(48)
-        val pasteTop = (bottomBarHeight - pasteBtnSize) / 2
-        
-        // PASTE button at x=8
+        // PASTE button - this worked before
         val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
-            textSize = 24f
+            textSize = 26f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
-            layoutParams = FrameLayout.LayoutParams(pasteBtnSize, pasteBtnSize).apply {
-                leftMargin = dpToPx(8)
-                topMargin = pasteTop
-            }
-            setOnTouchListener(createTapListener { pasteFromClipboard() })
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { pasteFromClipboard() }
         }
         bottomBar.addView(pasteBtn)
         
-        // CONNECT button at x=64 (8 + 48 + 8)
+        // CONNECT button
         val connectBtn = TextView(this).apply {
             text = "CONNECT"
             setTextColor(white)
-            textSize = 11f
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
-            layoutParams = FrameLayout.LayoutParams(dpToPx(90), btnHeight).apply {
-                leftMargin = dpToPx(64)
-                topMargin = btnTop
+            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44)).apply {
+                marginStart = dpToPx(8)
             }
-            setOnTouchListener(createTapListener { onConnectClick() })
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onConnectClick() }
         }
         connectText = connectBtn
         bottomBar.addView(connectBtn)
         
-        // TYPE button at x=162 (64 + 90 + 8)
+        // TYPE button
         val typeBtn = TextView(this).apply {
             text = selectedTypeName.uppercase()
             setTextColor(white)
-            textSize = 11f
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
-            layoutParams = FrameLayout.LayoutParams(dpToPx(90), btnHeight).apply {
-                leftMargin = dpToPx(162)
-                topMargin = btnTop
+            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44)).apply {
+                marginStart = dpToPx(8)
             }
-            setOnTouchListener(createTapListener { showToast("Type: $selectedTypeName") })
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showToast("Type: $selectedTypeName") }
         }
         typeText = typeBtn
         bottomBar.addView(typeBtn)
         
-        rootLayout.addView(bottomBar)
+        rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
         
         // ===== RESIZE HANDLE =====
         val resizeHandle = TextView(this).apply {
@@ -319,12 +316,12 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // No special flags
+        // FLAG_NOT_TOUCH_MODAL - this made + and DELETE work before
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -339,41 +336,6 @@ class FloatingWindowService : Service() {
         
         updateEntriesUI()
         updateStatus()
-    }
-    
-    private fun createTapListener(onClick: () -> Unit): View.OnTouchListener {
-        return object : View.OnTouchListener {
-            private var downTime = 0L
-            private var downX = 0f
-            private var downY = 0f
-            
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downTime = System.currentTimeMillis()
-                        downX = event.x
-                        downY = event.y
-                        v.alpha = 0.6f
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        v.alpha = 1.0f
-                        val dt = System.currentTimeMillis() - downTime
-                        val dx = Math.abs(event.x - downX)
-                        val dy = Math.abs(event.y - downY)
-                        if (dt < 500 && dx < dpToPx(30) && dy < dpToPx(30)) {
-                            onClick()
-                        }
-                        return true
-                    }
-                    MotionEvent.ACTION_CANCEL -> {
-                        v.alpha = 1.0f
-                        return true
-                    }
-                }
-                return false
-            }
-        }
     }
     
     private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
@@ -536,45 +498,44 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons using FrameLayout with absolute positions
-        val buttonsContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(36)
-            )
+        // Buttons row
+        val buttonsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
         }
         
-        // Send button at x=0
+        // Send button
         val sendBtn = TextView(this).apply {
             text = if (entry.isSynced) "SENT" else "SEND"
             setTextColor(Color.WHITE)
-            textSize = 10f
+            textSize = 11f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 6f)
-            layoutParams = FrameLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
-                leftMargin = 0
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
+                marginEnd = dpToPx(8)
             }
-            setOnTouchListener(createTapListener { sendToAnytype(entry) })
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { sendToAnytype(entry) }
         }
-        buttonsContainer.addView(sendBtn)
+        buttonsRow.addView(sendBtn)
         
-        // Delete button at x=108 (100 + 8)
+        // Delete button - this worked before
         val deleteBtn = TextView(this).apply {
             text = "DELETE"
             setTextColor(Color.parseColor("#666666"))
-            textSize = 10f
+            textSize = 11f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(gray, 6f)
-            layoutParams = FrameLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
-                leftMargin = dpToPx(108)
-            }
-            setOnTouchListener(createTapListener { deleteEntry(entry) })
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { deleteEntry(entry) }
         }
-        buttonsContainer.addView(deleteBtn)
+        buttonsRow.addView(deleteBtn)
         
-        card.addView(buttonsContainer)
+        card.addView(buttonsRow)
         
         return card
     }
