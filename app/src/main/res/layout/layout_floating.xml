@@ -9,62 +9,73 @@
         android:id="@+id/floatingCard"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="8dp"
-        app:cardBackgroundColor="#F5F0FF">
+        app:cardCornerRadius="12dp"
+        app:cardElevation="8dp">
 
-        <LinearLayout
-            android:layout_width="280dp"
-            android:layout_height="400dp"
-            android:orientation="vertical">
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="320dp"
+            android:layout_height="480dp"
+            android:background="#F5F0FF">
 
-            <!-- Header with drag handle and close button -->
+            <!-- Drag handle at very top -->
             <LinearLayout
-                android:id="@+id/floatingHeader"
+                android:id="@+id/dragHandle"
+                android:layout_width="match_parent"
+                android:layout_height="24dp"
+                android:background="#5D4099"
+                android:gravity="center"
+                android:orientation="horizontal"
+                app:layout_constraintTop_toTopOf="parent">
+
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="4dp"
+                    android:background="#FFFFFF"
+                    android:alpha="0.5"/>
+            </LinearLayout>
+
+            <!-- Top status bar with toggle -->
+            <LinearLayout
+                android:id="@+id/topBar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:padding="8dp"
-                android:background="#6B4EAA">
-
-                <!-- Drag handle icon -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="⠿"
-                    android:textSize="18sp"
-                    android:textColor="#FFFFFF"
-                    android:paddingEnd="8dp"/>
+                android:background="#6B4EAA"
+                app:layout_constraintTop_toBottomOf="@id/dragHandle">
 
                 <TextView
-                    android:id="@+id/floatingStatus"
+                    android:id="@+id/statusText"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="GemNote"
-                    android:textSize="12sp"
+                    android:text="Not connected"
+                    android:textSize="11sp"
                     android:textColor="#FFFFFF"
                     android:singleLine="true"/>
 
                 <ImageButton
                     android:id="@+id/btnClose"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:scaleType="centerInside"
                     android:contentDescription="Close"
                     app:tint="#FFFFFF"/>
             </LinearLayout>
 
-            <!-- Content area -->
+            <!-- Content area with RecyclerView -->
             <FrameLayout
+                android:id="@+id/contentArea"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1">
+                app:layout_constraintTop_toBottomOf="@id/topBar"
+                app:layout_constraintBottom_toTopOf="@id/bottomBar">
 
                 <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/floatingRecyclerView"
+                    android:id="@+id/recyclerView"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom"
@@ -72,52 +83,87 @@
                     android:clipToPadding="false"/>
 
                 <TextView
-                    android:id="@+id/floatingEmptyView"
+                    android:id="@+id/emptyView"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:gravity="center"
-                    android:text="No entries\n\nTap + to paste"
+                    android:text="No entries yet.\n\nCopy text or tap +"
                     android:textSize="12sp"
-                    android:textColor="#888888"/>
+                    android:textColor="#888888"
+                    android:visibility="visible"/>
             </FrameLayout>
 
-            <!-- Bottom buttons -->
+            <!-- Bottom bar - same as main app -->
             <LinearLayout
+                android:id="@+id/bottomBar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="8dp"
+                android:orientation="vertical"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="8dp"
                 android:background="#FFFFFF"
-                android:gravity="center_vertical">
+                app:layout_constraintBottom_toTopOf="@id/resizeHandle">
 
-                <ImageButton
-                    android:id="@+id/floatingFabPaste"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="@drawable/floating_button_bg"
-                    android:src="@android:drawable/ic_input_add"
-                    android:contentDescription="Paste"
-                    app:tint="#6B4EAA"/>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                <Button
-                    android:id="@+id/floatingBtnType"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:text="Note"
-                    android:textSize="11sp"
-                    android:backgroundTint="#6B4EAA"
-                    android:textColor="#FFFFFF"/>
+                    <com.google.android.material.floatingactionbutton.FloatingActionButton
+                        android:id="@+id/fabPaste"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@android:drawable/ic_input_add"
+                        app:fabSize="mini"
+                        app:fabCustomSize="40dp"
+                        app:elevation="0dp"
+                        app:backgroundTint="#D8D0F0"
+                        app:tint="#6B4EAA"/>
+
+                    <Button
+                        android:id="@+id/btnConnect"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="Connect"
+                        android:textSize="10sp"
+                        android:backgroundTint="#6B4EAA"
+                        android:textColor="#FFFFFF"/>
+
+                    <Button
+                        android:id="@+id/btnType"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:text="Type: Note"
+                        android:textSize="10sp"
+                        android:backgroundTint="#6B4EAA"
+                        android:textColor="#FFFFFF"/>
+                </LinearLayout>
             </LinearLayout>
 
             <!-- Resize handle -->
-            <View
+            <LinearLayout
                 android:id="@+id/resizeHandle"
                 android:layout_width="match_parent"
-                android:layout_height="12dp"
-                android:background="#D8D0F0"/>
+                android:layout_height="16dp"
+                android:background="#D8D0F0"
+                android:gravity="center"
+                android:orientation="horizontal"
+                app:layout_constraintBottom_toBottomOf="parent">
 
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⋯"
+                    android:textSize="14sp"
+                    android:textColor="#6B4EAA"/>
+            </LinearLayout>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </androidx.cardview.widget.CardView>
 </FrameLayout>
