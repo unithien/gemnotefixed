@@ -401,7 +401,7 @@ class MainActivity : AppCompatActivity() {
                     .putString("type_name", selectedTypeName)
                     .apply()
                 updateTypeButton()
-                Toast.makeText(this, "Type: ${type.name}", Toast.LENGTH_SHORT).show()
+                // No toast notification when selecting type
             }
             .show()
     }
@@ -604,7 +604,8 @@ class MainActivity : AppCompatActivity() {
                     entry.isSynced = true
                     saveEntries()
                     updateUI()
-                    Toast.makeText(this@MainActivity, "Sent to $selectedTypeName: $title", Toast.LENGTH_SHORT).show()
+                    // Short success toast
+                    Toast.makeText(this@MainActivity, "success \uD83C\uDF89", Toast.LENGTH_SHORT).show()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: ""
                     Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
