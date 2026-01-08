@@ -51,6 +51,19 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
+        
+        // Types to exclude from the selector
+        val EXCLUDED_TYPE_KEYS = setOf(
+            "audio", "video", "file", "image", 
+            "participant", "spaceview", "template",
+            "ot-audio", "ot-video", "ot-file", "ot-image",
+            "ot-participant", "ot-template"
+        )
+        
+        val EXCLUDED_TYPE_NAMES = setOf(
+            "audio", "video", "file", "image", 
+            "space member", "template", "participant"
+        )
     }
 
     private lateinit var prefs: SharedPreferences
@@ -347,7 +360,18 @@ class MainActivity : AppCompatActivity() {
                 }
                 
                 if (response.isSuccessful) {
-                    objectTypes = response.body()?.data ?: emptyList()
+                    val allTypes = response.body()?.data ?: emptyList()
+                    
+                    // Filter out unwanted types
+                    objectTypes = allTypes.filter { type ->
+                        val keyLower = type.key.lowercase()
+                        val nameLower = type.name.lowercase()
+                        
+                        // Exclude if key or name matches exclusion lists
+                        !EXCLUDED_TYPE_KEYS.any { keyLower.contains(it) } &&
+                        !EXCLUDED_TYPE_NAMES.any { nameLower == it }
+                    }
+                    
                     showTypeSelector()
                 } else {
                     Toast.makeText(this@MainActivity, "Failed to load types", Toast.LENGTH_SHORT).show()
