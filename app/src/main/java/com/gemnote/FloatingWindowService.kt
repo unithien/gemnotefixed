@@ -22,9 +22,10 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
-import android.widget.ScrollView
+imimport android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -222,8 +223,13 @@ class FloatingWindowService : Service() {
             textSize = 20f
             gravity = Gravity.CENTER
             setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { 
+                showToast("Close clicked!")
+                closeFloatingWindow() 
+            }
         }
-        setupTouchButton(closeBtn, "Close") { closeFloatingWindow() }
         header.addView(closeBtn)
         
         rootLayout.addView(header, LinearLayout.LayoutParams(
@@ -247,15 +253,20 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR =====
-        val bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // ===== BOTTOM BAR - Handle touches on the bar itself =====
+        val bottomBar = object : LinearLayout(this) {
+            override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
+                // Don't intercept - let children handle touches
+                return false
+            }
+        }.apply {
+            orientation = HORIZONTAL
             setBackgroundColor(white)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // PASTE button
+        // PASTE button - Simple click
         val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
@@ -268,8 +279,13 @@ class FloatingWindowService : Service() {
                 50f
             )
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showToast("+ clicked!")
+                pasteFromClipboard()
+            }
         }
-        setupTouchButton(pasteBtn, "Paste") { pasteFromClipboard() }
         bottomBar.addView(pasteBtn)
         
         // CONNECT button
@@ -284,8 +300,13 @@ class FloatingWindowService : Service() {
                 marginStart = dpToPx(8)
                 marginEnd = dpToPx(4)
             }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showToast("Connect clicked!")
+                onConnectClick()
+            }
         }
-        setupTouchButton(connectBtn!!, "Connect") { onConnectClick() }
         bottomBar.addView(connectBtn)
         
         // TYPE button
@@ -299,8 +320,12 @@ class FloatingWindowService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
                 marginStart = dpToPx(4)
             }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showToast("Type clicked! $selectedTypeName")
+            }
         }
-        setupTouchButton(typeBtn!!, "Type") { showToast("Type: $selectedTypeName") }
         bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
@@ -329,11 +354,12 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
+        // Try without FLAG_NOT_FOCUSABLE
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -348,47 +374,6 @@ class FloatingWindowService : Service() {
         
         updateEntriesUI()
         updateStatus()
-    }
-    
-    // Setup touch handling - with debug
-    private fun setupTouchButton(view: View, name: String, onClick: () -> Unit) {
-        var downTime = 0L
-        var downX = 0f
-        var downY = 0f
-        
-        view.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downTime = System.currentTimeMillis()
-                    downX = event.x
-                    downY = event.y
-                    v.isPressed = true
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    v.isPressed = false
-                    val elapsed = System.currentTimeMillis() - downTime
-                    val moved = Math.abs(event.x - downX) + Math.abs(event.y - downY)
-                    
-                    // Debug: show what's happening
-                    showToast("$name tapped! (${elapsed}ms, ${moved.toInt()}px)")
-                    
-                    if (elapsed < 500 && moved < dpToPx(20)) {
-                        try {
-                            onClick()
-                        } catch (e: Exception) {
-                            showToast("Error: ${e.message}")
-                        }
-                    }
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    v.isPressed = false
-                    true
-                }
-                else -> false
-            }
-        }
     }
     
     private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
@@ -556,8 +541,13 @@ class FloatingWindowService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f).apply {
                 marginEnd = dpToPx(8)
             }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showToast("Send clicked!")
+                sendToAnytype(entry)
+            }
         }
-        setupTouchButton(sendBtn, "Send") { sendToAnytype(entry) }
         buttonsRow.addView(sendBtn)
         
         val deleteBtn = TextView(this).apply {
@@ -572,8 +562,13 @@ class FloatingWindowService : Service() {
                 6f
             )
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showToast("Delete clicked!")
+                deleteEntry(entry)
+            }
         }
-        setupTouchButton(deleteBtn, "Delete") { deleteEntry(entry) }
         buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
@@ -582,7 +577,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun onConnectClick() {
-        showToast("onConnectClick called!")
         if (isConnected) {
             showToast("Connected to: $selectedSpaceName")
         } else {
@@ -596,7 +590,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun pasteFromClipboard() {
-        showToast("pasteFromClipboard called!")
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip
         if (clip != null && clip.itemCount > 0) {
@@ -612,7 +605,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun addEntry(content: String) {
-        showToast("addEntry called!")
         if (content.isBlank()) return
         if (entries.any { it.content == content }) {
             showToast("Already exists")
@@ -635,7 +627,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun deleteEntry(entry: ClipEntry) {
-        showToast("deleteEntry called!")
         entries.removeAll { it.id == entry.id }
         saveEntries()
         updateEntriesUI()
@@ -643,7 +634,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun closeFloatingWindow() {
-        showToast("closeFloatingWindow called!")
         sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
         stopSelf()
     }
@@ -737,7 +727,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun sendToAnytype(entry: ClipEntry) {
-        showToast("sendToAnytype called!")
         if (!isConnected || selectedSpaceId.isEmpty()) {
             showToast("Not connected")
             return
