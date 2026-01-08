@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
@@ -22,7 +23,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -78,8 +78,10 @@ class FloatingWindowService : Service() {
     
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
-    private var connectBtn: Button? = null
-    private var typeBtn: Button? = null
+    private var connectBtn: View? = null
+    private var typeBtn: View? = null
+    private var connectText: TextView? = null
+    private var typeText: TextView? = null
     
     private var initialX = 0
     private var initialY = 0
@@ -87,6 +89,9 @@ class FloatingWindowService : Service() {
     private var initialTouchY = 0f
 
     private var layoutParams: WindowManager.LayoutParams? = null
+    
+    // Button click handlers map
+    private val buttonActions = mutableMapOf<View, () -> Unit>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -169,14 +174,67 @@ class FloatingWindowService : Service() {
     private fun saveEntries() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
+    
+    // Check if touch is inside view bounds
+    private fun isTouchInsideView(view: View, x: Float, y: Float, container: View): Boolean {
+        val location = IntArray(2)
+        view.getLocationInWindow(location)
+        val containerLocation = IntArray(2)
+        container.getLocationInWindow(containerLocation)
+        
+        val relX = location[0] - containerLocation[0]
+        val relY = location[1] - containerLocation[1]
+        
+        return x >= relX && x <= relX + view.width &&
+               y >= relY && y <= relY + view.height
+    }
+    
+    // Register button with its action
+    private fun registerButton(view: View, action: () -> Unit) {
+        buttonActions[view] = action
+    }
 
     private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
         
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        // Root layout with touch interception
+        val rootLayout = object : LinearLayout(this) {
+            private var touchStartX = 0f
+            private var touchStartY = 0f
+            private var touchStartTime = 0L
+            
+            override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+                when (ev.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchStartX = ev.x
+                        touchStartY = ev.y
+                        touchStartTime = System.currentTimeMillis()
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val dx = Math.abs(ev.x - touchStartX)
+                        val dy = Math.abs(ev.y - touchStartY)
+                        val dt = System.currentTimeMillis() - touchStartTime
+                        
+                        // If it's a tap (not drag)
+                        if (dx < dpToPx(15) && dy < dpToPx(15) && dt < 400) {
+                            // Check if any registered button was tapped
+                            for ((view, action) in buttonActions) {
+                                if (view.visibility == View.VISIBLE && isTouchInsideView(view, ev.x, ev.y, this)) {
+                                    view.alpha = 0.7f
+                                    handler.postDelayed({ view.alpha = 1f }, 100)
+                                    action()
+                                    return true
+                                }
+                            }
+                        }
+                    }
+                }
+                return super.dispatchTouchEvent(ev)
+            }
+        }.apply {
+            orientation = VERTICAL
             background = createRoundedDrawable(white, 16f)
             elevation = 12f
             clipToOutline = true
@@ -199,15 +257,15 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        // Close button using Button widget
-        val closeBtn = Button(this).apply {
+        // Close button
+        val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(white)
-            textSize = 16f
-            setBackgroundColor(Color.TRANSPARENT)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(50), dpToPx(40))
-            setOnClickListener { closeFloatingWindow() }
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
         }
+        registerButton(closeBtn) { closeFloatingWindow() }
         header.addView(closeBtn)
         
         rootLayout.addView(header, LinearLayout.LayoutParams(
@@ -240,45 +298,48 @@ class FloatingWindowService : Service() {
         }
         
         // PASTE button
-        val pasteBtn = Button(this).apply {
+        val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
-            textSize = 22f
+            textSize = 24f
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
-            setOnClickListener { pasteFromClipboard() }
         }
+        registerButton(pasteBtn) { pasteFromClipboard() }
         bottomBar.addView(pasteBtn)
         
         // CONNECT button
-        connectBtn = Button(this).apply {
+        connectBtn = TextView(this).apply {
             text = "CONNECT"
             setTextColor(white)
             textSize = 11f
             setTypeface(null, Typeface.BOLD)
-            isAllCaps = false
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(90), dpToPx(44)).apply {
                 marginStart = dpToPx(8)
             }
-            setOnClickListener { onConnectClick() }
         }
+        connectText = connectBtn as TextView
+        registerButton(connectBtn!!) { onConnectClick() }
         bottomBar.addView(connectBtn)
         
         // TYPE button  
-        typeBtn = Button(this).apply {
+        typeBtn = TextView(this).apply {
             text = selectedTypeName.uppercase()
             setTextColor(white)
             textSize = 11f
             setTypeface(null, Typeface.BOLD)
-            isAllCaps = false
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(90), dpToPx(44)).apply {
                 marginStart = dpToPx(8)
             }
-            setOnClickListener { showToast("Type: $selectedTypeName") }
         }
+        typeText = typeBtn as TextView
+        registerButton(typeBtn!!) { showToast("Type: $selectedTypeName") }
         bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
@@ -307,7 +368,6 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // No flags for full touch
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
@@ -408,23 +468,29 @@ class FloatingWindowService : Service() {
         when {
             isConnected && selectedSpaceName.isNotEmpty() -> {
                 statusText?.text = "✓ $selectedSpaceName"
-                connectBtn?.text = "SPACE"
+                connectText?.text = "SPACE"
             }
             isConnected -> {
                 statusText?.text = "✓ Connected"
-                connectBtn?.text = "SPACE"
+                connectText?.text = "SPACE"
             }
             else -> {
                 statusText?.text = "GemNote"
-                connectBtn?.text = "CONNECT"
+                connectText?.text = "CONNECT"
             }
         }
-        typeBtn?.text = selectedTypeName.uppercase()
+        typeText?.text = selectedTypeName.uppercase()
     }
     
     private fun updateEntriesUI() {
         val container = entriesContainer ?: return
         container.removeAllViews()
+        
+        // Clear old button registrations for entry cards
+        val keysToRemove = buttonActions.keys.filter { 
+            it.parent != null && it.parent != connectBtn?.parent && it.parent != typeBtn?.parent 
+        }
+        keysToRemove.forEach { buttonActions.remove(it) }
         
         if (entries.isEmpty()) {
             container.addView(TextView(this).apply {
@@ -489,22 +555,22 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons row using Button widgets
+        // Buttons row
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         
         // Send button
-        val sendBtn = Button(this).apply {
+        val sendBtn = TextView(this).apply {
             text = if (entry.isSynced) "SENT" else "SEND"
             setTextColor(Color.WHITE)
             textSize = 10f
             setTypeface(null, Typeface.BOLD)
-            isAllCaps = false
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 6f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
-            setOnClickListener { sendToAnytype(entry) }
         }
+        registerButton(sendBtn) { sendToAnytype(entry) }
         buttonsRow.addView(sendBtn)
         
         // Spacer
@@ -513,16 +579,16 @@ class FloatingWindowService : Service() {
         })
         
         // Delete button
-        val deleteBtn = Button(this).apply {
+        val deleteBtn = TextView(this).apply {
             text = "DELETE"
             setTextColor(Color.parseColor("#666666"))
             textSize = 10f
             setTypeface(null, Typeface.BOLD)
-            isAllCaps = false
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(gray, 6f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
-            setOnClickListener { deleteEntry(entry) }
         }
+        registerButton(deleteBtn) { deleteEntry(entry) }
         buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
@@ -741,6 +807,7 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        buttonActions.clear()
         floatingView?.let { 
             try { windowManager?.removeView(it) } catch (e: Exception) {}
         }
