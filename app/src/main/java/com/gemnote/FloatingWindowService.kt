@@ -21,7 +21,6 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -225,16 +224,11 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        val closeBtn = Button(this).apply {
+        val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(white)
-            textSize = 16f
-            setBackgroundColor(Color.TRANSPARENT)
-            setPadding(dpToPx(8), 0, dpToPx(8), 0)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            textSize = 18f
+            setPadding(dpToPx(12), dpToPx(4), dpToPx(12), dpToPx(4))
             setOnClickListener { closeFloatingWindow() }
         }
         header.addView(closeBtn)
@@ -278,42 +272,53 @@ class FloatingWindowService : Service() {
             setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
         }
         
-        // Paste button (circular)
-        val pasteBtn = Button(this).apply {
+        // Paste button (circular) - use TextView for better click handling
+        val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
-            textSize = 20f
+            textSize = 24f
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44))
-            setOnClickListener { pasteFromClipboard() }
+            setOnClickListener { 
+                showToast("Pasting...")
+                pasteFromClipboard() 
+            }
         }
         bottomBar.addView(pasteBtn)
         
-        // Connect button
+        // Connect button - use TextView for better click handling
         connectBtn = Button(this).apply {
-            text = "Connect"
+            text = "CONNECT"
             setTextColor(white)
             textSize = 11f
+            isAllCaps = true
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(40), 1f).apply {
                 marginStart = dpToPx(6)
                 marginEnd = dpToPx(4)
             }
-            setOnClickListener { onConnectClick() }
+            setOnClickListener { 
+                showToast("Connect tapped")
+                onConnectClick() 
+            }
         }
         bottomBar.addView(connectBtn)
         
         // Type button
         typeBtn = Button(this).apply {
-            text = selectedTypeName
+            text = selectedTypeName.uppercase()
             setTextColor(white)
             textSize = 11f
+            isAllCaps = true
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(40), 1f).apply {
                 marginStart = dpToPx(4)
             }
-            setOnClickListener { showToast("Type: $selectedTypeName") }
+            setOnClickListener { 
+                showToast("Type: $selectedTypeName") 
+            }
         }
         bottomBar.addView(typeBtn)
         
@@ -333,7 +338,7 @@ class FloatingWindowService : Service() {
         
         floatingView = rootLayout
         
-        // Window params
+        // Window params - REMOVE FLAG_NOT_FOCUSABLE so buttons work
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -345,7 +350,8 @@ class FloatingWindowService : Service() {
             dpToPx(currentWidth),
             dpToPx(currentHeight),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -436,18 +442,18 @@ class FloatingWindowService : Service() {
         when {
             isConnected && selectedSpaceName.isNotEmpty() -> {
                 statusText?.text = "✓ $selectedSpaceName"
-                connectBtn?.text = "Space"
+                connectBtn?.text = "SPACE"
             }
             isConnected -> {
                 statusText?.text = "✓ Connected"
-                connectBtn?.text = "Space"
+                connectBtn?.text = "SPACE"
             }
             else -> {
                 statusText?.text = "GemNote"
-                connectBtn?.text = "Connect"
+                connectBtn?.text = "CONNECT"
             }
         }
-        typeBtn?.text = selectedTypeName
+        typeBtn?.text = selectedTypeName.uppercase()
     }
     
     private fun updateEntriesUI() {
@@ -530,9 +536,10 @@ class FloatingWindowService : Service() {
         }
         
         val sendBtn = Button(this).apply {
-            text = if (entry.isSynced) "Sent" else "Send"
+            text = if (entry.isSynced) "SENT" else "SEND"
             setTextColor(Color.WHITE)
-            textSize = 11f
+            textSize = 10f
+            isAllCaps = true
             background = createRoundedDrawable(purple, 6f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(32), 1f).apply {
                 marginEnd = dpToPx(6)
@@ -542,9 +549,10 @@ class FloatingWindowService : Service() {
         buttonsRow.addView(sendBtn)
         
         val deleteBtn = Button(this).apply {
-            text = "Delete"
+            text = "DELETE"
             setTextColor(Color.parseColor("#666666"))
-            textSize = 11f
+            textSize = 10f
+            isAllCaps = true
             background = createRoundedDrawable(Color.parseColor("#E0E0E0"), 6f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(32), 1f)
             setOnClickListener { deleteEntry(entry) }
