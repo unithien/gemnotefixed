@@ -178,7 +178,6 @@ class MainActivity : AppCompatActivity() {
             pasteFromClipboard()
         }
         
-        // Floating toggle - simplified
         floatingToggle.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 if (checkOverlayPermission()) {
@@ -231,8 +230,6 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startFloatingWindow() {
-        Toast.makeText(this, "Starting floating window...", Toast.LENGTH_SHORT).show()
-        
         val intent = Intent(this, FloatingWindowService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
@@ -240,9 +237,8 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
         
-        // DON'T minimize - let user see if floating window appears
-        // User can press home button manually
-        Toast.makeText(this, "Press HOME to see floating window", Toast.LENGTH_LONG).show()
+        // Go to home screen
+        moveTaskToBack(true)
     }
     
     private fun stopFloatingWindow() {

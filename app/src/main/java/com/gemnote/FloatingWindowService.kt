@@ -11,26 +11,24 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -78,25 +76,35 @@ class FloatingWindowService : Service() {
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
     private lateinit var prefs: SharedPreferences
-    private var adapter: FloatingEntryAdapter? = null
     
     private val entries = mutableListOf<ClipEntry>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val handler = Handler(Looper.getMainLooper())
+    private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     
     private var spaces = listOf<FloatingSpace>()
-    private var objectTypes = listOf<FloatingObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
     
+    // Views to update
+    private var statusText: TextView? = null
+    private var entriesContainer: LinearLayout? = null
+    private var emptyText: TextView? = null
+    private var connectBtn: Button? = null
+    private var typeBtn: Button? = null
+    
     // For dragging
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+    
+    // For resizing
+    private var currentWidth = 300
+    private var currentHeight = 450
 
     private var layoutParams: WindowManager.LayoutParams? = null
 
@@ -105,12 +113,9 @@ class FloatingWindowService : Service() {
     override fun onCreate() {
         super.onCreate()
         
-        showToast("Service onCreate")
-        
         try {
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, createNotification())
-            showToast("Foreground started")
             
             prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -118,22 +123,15 @@ class FloatingWindowService : Service() {
             loadSettings()
             loadEntries()
             
-            // Delay window creation slightly
             handler.postDelayed({
-                try {
-                    createFloatingWindow()
-                    showToast("Window created!")
-                } catch (e: Exception) {
-                    showToast("Window error: ${e.message}")
+                createFloatingWindow()
+                if (getApiKey().isNotEmpty()) {
+                    autoConnect()
                 }
-            }, 500)
-            
-            if (getApiKey().isNotEmpty()) {
-                autoConnect()
-            }
+            }, 300)
             
         } catch (e: Exception) {
-            showToast("onCreate error: ${e.message}")
+            showToast("Error: ${e.message}")
             stopSelf()
         }
     }
@@ -198,38 +196,46 @@ class FloatingWindowService : Service() {
     }
 
     private fun createFloatingWindow() {
-        showToast("Creating window...")
+        val purple = Color.parseColor("#6B4EAA")
+        val lightPurple = Color.parseColor("#F5F0FF")
+        val white = Color.WHITE
         
-        // Create a simple view programmatically instead of inflating XML
+        // Root layout with rounded corners
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-            elevation = 10f
+            background = createRoundedDrawable(white, 16f)
+            elevation = 12f
+            clipToOutline = true
         }
         
-        // Header (purple bar with drag + close)
+        // ===== HEADER (drag handle) =====
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#6B4EAA"))
+            setBackgroundColor(purple)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 10, 20, 10)
+            setPadding(dpToPx(12), dpToPx(8), dpToPx(8), dpToPx(8))
         }
         
-        val titleText = TextView(this).apply {
-            text = if (selectedSpaceName.isNotEmpty()) "✓ $selectedSpaceName" else "GemNote"
-            setTextColor(Color.WHITE)
-            textSize = 14f
+        statusText = TextView(this).apply {
+            text = "GemNote"
+            setTextColor(white)
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        header.addView(titleText)
+        header.addView(statusText)
         
         val closeBtn = Button(this).apply {
-            text = "X"
-            setTextColor(Color.WHITE)
+            text = "✕"
+            setTextColor(white)
+            textSize = 16f
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener {
-                closeFloatingWindow()
-            }
+            setPadding(dpToPx(8), 0, dpToPx(8), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener { closeFloatingWindow() }
         }
         header.addView(closeBtn)
         
@@ -238,40 +244,91 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
         
-        // Content area
-        val content = LinearLayout(this).apply {
+        // ===== CONTENT AREA (scrollable entries) =====
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(lightPurple)
+        }
+        
+        entriesContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F5F0FF"))
-            setPadding(20, 20, 20, 20)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+        }
+        
+        emptyText = TextView(this).apply {
+            text = "No entries yet\n\nCopy text, then tap + to paste"
+            setTextColor(Color.parseColor("#888888"))
+            textSize = 13f
             gravity = Gravity.CENTER
+            setPadding(dpToPx(16), dpToPx(40), dpToPx(16), dpToPx(40))
         }
+        entriesContainer?.addView(emptyText)
         
-        val infoText = TextView(this).apply {
-            text = "Floating Window Works!\n\nEntries: ${entries.size}\n\nDrag header to move"
-            setTextColor(Color.parseColor("#333333"))
-            textSize = 14f
-            gravity = Gravity.CENTER
-        }
-        content.addView(infoText)
-        
-        // Paste button
-        val pasteBtn = Button(this).apply {
-            text = "+ Paste"
-            setBackgroundColor(Color.parseColor("#6B4EAA"))
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                pasteFromClipboard()
-            }
-        }
-        content.addView(pasteBtn, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 20 })
-        
-        rootLayout.addView(content, LinearLayout.LayoutParams(
+        scrollView.addView(entriesContainer)
+        rootLayout.addView(scrollView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             0,
             1f
+        ))
+        
+        // ===== BOTTOM BAR =====
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(white)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+        }
+        
+        // Paste button (circular)
+        val pasteBtn = Button(this).apply {
+            text = "+"
+            setTextColor(purple)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44))
+            setOnClickListener { pasteFromClipboard() }
+        }
+        bottomBar.addView(pasteBtn)
+        
+        // Connect button
+        connectBtn = Button(this).apply {
+            text = "Connect"
+            setTextColor(white)
+            textSize = 11f
+            background = createRoundedDrawable(purple, 8f)
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(40), 1f).apply {
+                marginStart = dpToPx(6)
+                marginEnd = dpToPx(4)
+            }
+            setOnClickListener { onConnectClick() }
+        }
+        bottomBar.addView(connectBtn)
+        
+        // Type button
+        typeBtn = Button(this).apply {
+            text = selectedTypeName
+            setTextColor(white)
+            textSize = 11f
+            background = createRoundedDrawable(purple, 8f)
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(40), 1f).apply {
+                marginStart = dpToPx(4)
+            }
+            setOnClickListener { showToast("Type: $selectedTypeName") }
+        }
+        bottomBar.addView(typeBtn)
+        
+        rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        
+        // ===== RESIZE HANDLE =====
+        val resizeHandle = View(this).apply {
+            setBackgroundColor(Color.parseColor("#D8D0F0"))
+        }
+        rootLayout.addView(resizeHandle, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dpToPx(12)
         ))
         
         floatingView = rootLayout
@@ -285,28 +342,33 @@ class FloatingWindowService : Service() {
         }
         
         layoutParams = WindowManager.LayoutParams(
-            dpToPx(280),
-            dpToPx(350),
+            dpToPx(currentWidth),
+            dpToPx(currentHeight),
             layoutFlag,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 200
+            x = 80
+            y = 150
         }
         
-        // Add view to window manager
-        try {
-            windowManager?.addView(floatingView, layoutParams)
-            showToast("View added!")
-        } catch (e: Exception) {
-            showToast("addView error: ${e.message}")
-            throw e
-        }
+        windowManager?.addView(floatingView, layoutParams)
         
-        // Setup drag
+        // Setup interactions
         setupDrag(header)
+        setupResize(resizeHandle)
+        
+        // Render entries
+        updateEntriesUI()
+        updateStatus()
+    }
+    
+    private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dpToPx(radius.toInt()).toFloat()
+        }
     }
     
     private fun dpToPx(dp: Int): Int {
@@ -334,6 +396,175 @@ class FloatingWindowService : Service() {
                     true
                 }
                 else -> false
+            }
+        }
+    }
+    
+    private fun setupResize(resizeView: View) {
+        resizeView.setOnTouchListener { _, event ->
+            val params = layoutParams ?: return@setOnTouchListener false
+            val wm = windowManager ?: return@setOnTouchListener false
+            val view = floatingView ?: return@setOnTouchListener false
+            
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaX = (event.rawX - initialTouchX).toInt()
+                    val deltaY = (event.rawY - initialTouchY).toInt()
+                    
+                    val newWidth = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
+                    val newHeight = (params.height + deltaY).coerceIn(dpToPx(350), dpToPx(650))
+                    
+                    params.width = newWidth
+                    params.height = newHeight
+                    wm.updateViewLayout(view, params)
+                    
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+    
+    private fun updateStatus() {
+        when {
+            isConnected && selectedSpaceName.isNotEmpty() -> {
+                statusText?.text = "✓ $selectedSpaceName"
+                connectBtn?.text = "Space"
+            }
+            isConnected -> {
+                statusText?.text = "✓ Connected"
+                connectBtn?.text = "Space"
+            }
+            else -> {
+                statusText?.text = "GemNote"
+                connectBtn?.text = "Connect"
+            }
+        }
+        typeBtn?.text = selectedTypeName
+    }
+    
+    private fun updateEntriesUI() {
+        val container = entriesContainer ?: return
+        container.removeAllViews()
+        
+        if (entries.isEmpty()) {
+            emptyText = TextView(this).apply {
+                text = "No entries yet\n\nCopy text, then tap + to paste"
+                setTextColor(Color.parseColor("#888888"))
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setPadding(dpToPx(16), dpToPx(40), dpToPx(16), dpToPx(40))
+            }
+            container.addView(emptyText)
+            return
+        }
+        
+        for (entry in entries) {
+            container.addView(createEntryCard(entry))
+        }
+    }
+    
+    private fun createEntryCard(entry: ClipEntry): View {
+        val purple = Color.parseColor("#6B4EAA")
+        
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = createRoundedDrawable(Color.WHITE, 8f)
+            setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8))
+            elevation = 2f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(6)
+            }
+        }
+        
+        // Time + synced status
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        
+        val timeText = TextView(this).apply {
+            text = dateFormat.format(Date(entry.timestamp))
+            setTextColor(Color.parseColor("#999999"))
+            textSize = 10f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headerRow.addView(timeText)
+        
+        if (entry.isSynced) {
+            val syncedText = TextView(this).apply {
+                text = "Synced"
+                setTextColor(Color.parseColor("#4CAF50"))
+                textSize = 10f
+                setBackgroundColor(Color.parseColor("#E8F5E9"))
+                setPadding(dpToPx(6), dpToPx(2), dpToPx(6), dpToPx(2))
+            }
+            headerRow.addView(syncedText)
+        }
+        
+        card.addView(headerRow)
+        
+        // Preview text
+        val previewText = TextView(this).apply {
+            text = entry.preview
+            setTextColor(Color.parseColor("#333333"))
+            textSize = 12f
+            maxLines = 2
+            setPadding(0, dpToPx(4), 0, dpToPx(6))
+        }
+        card.addView(previewText)
+        
+        // Buttons row
+        val buttonsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        
+        val sendBtn = Button(this).apply {
+            text = if (entry.isSynced) "Sent" else "Send"
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            background = createRoundedDrawable(purple, 6f)
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(32), 1f).apply {
+                marginEnd = dpToPx(6)
+            }
+            setOnClickListener { sendToAnytype(entry) }
+        }
+        buttonsRow.addView(sendBtn)
+        
+        val deleteBtn = Button(this).apply {
+            text = "Delete"
+            setTextColor(Color.parseColor("#666666"))
+            textSize = 11f
+            background = createRoundedDrawable(Color.parseColor("#E0E0E0"), 6f)
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(32), 1f)
+            setOnClickListener { deleteEntry(entry) }
+        }
+        buttonsRow.addView(deleteBtn)
+        
+        card.addView(buttonsRow)
+        
+        return card
+    }
+    
+    private fun onConnectClick() {
+        if (isConnected) {
+            showToast("Connected to: $selectedSpaceName")
+        } else {
+            if (getApiKey().isNotEmpty()) {
+                showToast("Scanning...")
+                autoScanNetwork()
+            } else {
+                showToast("Set API key in main app first")
             }
         }
     }
@@ -371,7 +602,14 @@ class FloatingWindowService : Service() {
         if (entries.size > 50) entries.removeLast()
         
         saveEntries()
-        showToast("Added! (${entries.size} entries)")
+        updateEntriesUI()
+        showToast("Added!")
+    }
+    
+    private fun deleteEntry(entry: ClipEntry) {
+        entries.removeAll { it.id == entry.id }
+        saveEntries()
+        updateEntriesUI()
     }
     
     private fun closeFloatingWindow() {
@@ -379,13 +617,79 @@ class FloatingWindowService : Service() {
         stopSelf()
     }
     
+    // ========== Network ==========
+    
+    private fun getLocalSubnet(): String? {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiInfo = wifiManager.connectionInfo
+            val ip = wifiInfo.ipAddress
+            if (ip == 0) return null
+            return String.format("%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff)
+        } catch (e: Exception) {
+            return null
+        }
+    }
+    
     private fun autoConnect() {
         val savedUrl = getBaseUrl()
         if (savedUrl.isNotEmpty()) {
             serviceScope.launch {
-                tryConnect(savedUrl)
+                val success = tryConnect(savedUrl)
+                if (success) {
+                    handler.post { updateStatus() }
+                }
             }
         }
+    }
+    
+    private fun autoScanNetwork() {
+        val apiKey = getApiKey()
+        if (apiKey.isEmpty()) return
+        
+        val subnet = getLocalSubnet()
+        if (subnet == null) {
+            showToast("Not on WiFi")
+            return
+        }
+        
+        serviceScope.launch {
+            var foundUrl: String? = null
+            val ips = (1..254).map { "$subnet.$it" }
+            
+            withContext(Dispatchers.IO) {
+                ips.chunked(50).forEach { batch ->
+                    if (foundUrl != null) return@forEach
+                    val results = batch.map { ip ->
+                        async {
+                            val url = "http://$ip:$PROXY_PORT"
+                            if (checkAnytypeAt(url, apiKey)) url else null
+                        }
+                    }.awaitAll()
+                    foundUrl = results.filterNotNull().firstOrNull()
+                }
+            }
+            
+            if (foundUrl != null) {
+                prefs.edit().putString("base_url", foundUrl).apply()
+                val success = tryConnect(foundUrl!!)
+                if (success) {
+                    showToast("Connected!")
+                    handler.post { updateStatus() }
+                }
+            } else {
+                showToast("Not found")
+            }
+        }
+    }
+    
+    private suspend fun checkAnytypeAt(url: String, apiKey: String): Boolean {
+        return try {
+            withTimeoutOrNull(2000) {
+                val api = createApi(url, apiKey)
+                api.getSpaces().isSuccessful
+            } ?: false
+        } catch (e: Exception) { false }
     }
     
     private suspend fun tryConnect(url: String): Boolean {
@@ -408,6 +712,43 @@ class FloatingWindowService : Service() {
                 true
             } else false
         } catch (e: Exception) { false }
+    }
+    
+    private fun sendToAnytype(entry: ClipEntry) {
+        if (!isConnected || selectedSpaceId.isEmpty()) {
+            showToast("Not connected")
+            return
+        }
+        
+        val lines = entry.content.lines()
+        val title = lines.firstOrNull()?.take(100)?.trimStart('#', ' ') ?: "Note"
+        val body = if (lines.size > 1) lines.drop(1).joinToString("\n").trim() else null
+        
+        serviceScope.launch {
+            try {
+                val api = createApi(getBaseUrl(), getApiKey())
+                val request = FloatingCreateObjectRequest(
+                    name = title,
+                    typeKey = selectedTypeKey,
+                    body = body,
+                    icon = FloatingObjectIcon(emoji = "📝", format = "emoji")
+                )
+                val response = withContext(Dispatchers.IO) {
+                    api.createObject(selectedSpaceId, request)
+                }
+                
+                if (response.isSuccessful) {
+                    entry.isSynced = true
+                    saveEntries()
+                    handler.post { updateEntriesUI() }
+                    showToast("Sent! 🎉")
+                } else {
+                    showToast("Failed")
+                }
+            } catch (e: Exception) {
+                showToast("Error")
+            }
+        }
     }
     
     private fun createApi(baseUrl: String, apiKey: String): FloatingAnytypeApi {
@@ -437,48 +778,10 @@ class FloatingWindowService : Service() {
         floatingView?.let { view ->
             try {
                 windowManager?.removeView(view)
-            } catch (e: Exception) {
-                // ignore
-            }
+            } catch (e: Exception) {}
         }
         floatingView = null
     }
-}
-
-// Adapter for floating window
-class FloatingEntryAdapter(
-    private val entries: List<ClipEntry>,
-    private val onSendClick: (ClipEntry) -> Unit,
-    private val onDeleteClick: (ClipEntry) -> Unit
-) : RecyclerView.Adapter<FloatingEntryAdapter.ViewHolder>() {
-    
-    private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-    
-    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val tvTime: TextView = view.findViewById(R.id.tvTime)
-        val tvPreview: TextView = view.findViewById(R.id.tvPreview)
-        val tvSynced: TextView = view.findViewById(R.id.tvSynced)
-        val btnSend: Button = view.findViewById(R.id.btnSend)
-        val btnDelete: Button = view.findViewById(R.id.btnDelete)
-    }
-    
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_entry, parent, false)
-        return ViewHolder(view)
-    }
-    
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val entry = entries[position]
-        holder.tvTime.text = dateFormat.format(Date(entry.timestamp))
-        holder.tvPreview.text = entry.preview
-        holder.tvSynced.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
-        holder.btnSend.text = if (entry.isSynced) "Sent" else "Send"
-        holder.btnSend.setOnClickListener { onSendClick(entry) }
-        holder.btnDelete.setOnClickListener { onDeleteClick(entry) }
-    }
-    
-    override fun getItemCount() = entries.size
 }
 
 // Data classes
