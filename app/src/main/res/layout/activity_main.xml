@@ -5,23 +5,32 @@
     android:layout_height="match_parent"
     android:background="#F5F0FF">
 
-    <!-- Top status bar -->
+    <!-- Top status bar with floating toggle -->
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:padding="12dp"
         android:background="#6B4EAA"
         app:layout_constraintTop_toTopOf="parent">
 
         <TextView
             android:id="@+id/statusText"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:text="Not connected"
             android:textSize="14sp"
             android:textColor="#FFFFFF"/>
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/floatingToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="#FFFFFF"
+            app:trackTint="#D8D0F0"/>
     </LinearLayout>
 
     <!-- Content area with RecyclerView anchored to bottom -->

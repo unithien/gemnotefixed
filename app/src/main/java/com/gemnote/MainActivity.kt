@@ -7,9 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -20,6 +22,7 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -51,6 +54,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
+        const val OVERLAY_PERMISSION_CODE = 1001
         
         // Types to exclude from the selector
         val EXCLUDED_TYPE_KEYS = setOf(
@@ -73,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var typeText: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnType: Button
+    private lateinit var floatingToggle: SwitchCompat
     private lateinit var adapter: EntryAdapter
     
     private val entries = mutableListOf<ClipEntry>()
@@ -120,6 +125,7 @@ class MainActivity : AppCompatActivity() {
         emptyView = findViewById(R.id.emptyView)
         statusText = findViewById(R.id.statusText)
         btnConnect = findViewById(R.id.btnConnect)
+        floatingToggle = findViewById(R.id.floatingToggle)
         
         // Type button - reuse btnService for type selection
         btnType = findViewById(R.id.btnService)
@@ -154,6 +160,67 @@ class MainActivity : AppCompatActivity() {
         findViewById<FloatingActionButton>(R.id.fabPaste).setOnClickListener {
             pasteFromClipboard()
         }
+        
+        // Setup floating toggle
+        floatingToggle.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                if (checkOverlayPermission()) {
+                    startFloatingWindow()
+                } else {
+                    floatingToggle.isChecked = false
+                    requestOverlayPermission()
+                }
+            } else {
+                stopFloatingWindow()
+            }
+        }
+    }
+    
+    private fun checkOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+    
+    private fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            AlertDialog.Builder(this)
+                .setTitle("Permission Required")
+                .setMessage("To use floating mode, please allow GemNote to display over other apps.")
+                .setPositiveButton("Open Settings") { _, _ ->
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivityForResult(intent, OVERLAY_PERMISSION_CODE)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OVERLAY_PERMISSION_CODE) {
+            if (checkOverlayPermission()) {
+                floatingToggle.isChecked = true
+                startFloatingWindow()
+            } else {
+                Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun startFloatingWindow() {
+        // Will be implemented in Step 2
+        Toast.makeText(this, "Floating mode: ON (Step 2 needed)", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun stopFloatingWindow() {
+        // Will be implemented in Step 2
+        Toast.makeText(this, "Floating mode: OFF", Toast.LENGTH_SHORT).show()
     }
     
     private fun loadSettings() {
