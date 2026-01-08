@@ -23,7 +23,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -252,7 +251,7 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR =====
+        // ===== BOTTOM BAR with touch detection =====
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
@@ -260,7 +259,7 @@ class FloatingWindowService : Service() {
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // PASTE button - fixed size
+        // PASTE button - fixed size 48dp
         val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
@@ -281,9 +280,15 @@ class FloatingWindowService : Service() {
         }
         bottomBar.addView(pasteBtn)
         
-        // Wrapper for CONNECT button to handle touch properly
-        val connectWrapper = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
+        // CONNECT button - fixed size 100dp
+        connectBtn = TextView(this).apply {
+            text = "CONNECT"
+            setTextColor(white)
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createPressableDrawable(purple, purplePressed, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(44)).apply {
                 marginStart = dpToPx(8)
                 marginEnd = dpToPx(4)
             }
@@ -293,24 +298,17 @@ class FloatingWindowService : Service() {
                 onConnectClick()
             }
         }
-        connectBtn = TextView(this).apply {
-            text = "CONNECT"
+        bottomBar.addView(connectBtn)
+        
+        // TYPE button - fixed size 100dp
+        typeBtn = TextView(this).apply {
+            text = selectedTypeName.uppercase()
             setTextColor(white)
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createPressableDrawable(purple, purplePressed, 8f)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        connectWrapper.addView(connectBtn)
-        bottomBar.addView(connectWrapper)
-        
-        // Wrapper for TYPE button
-        val typeWrapper = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(44)).apply {
                 marginStart = dpToPx(4)
             }
             isClickable = true
@@ -319,20 +317,7 @@ class FloatingWindowService : Service() {
                 showToast("Type: $selectedTypeName")
             }
         }
-        typeBtn = TextView(this).apply {
-            text = selectedTypeName.uppercase()
-            setTextColor(white)
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createPressableDrawable(purple, purplePressed, 8f)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        typeWrapper.addView(typeBtn)
-        bottomBar.addView(typeWrapper)
+        bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -532,14 +517,20 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons row
+        // Buttons row - use fixed sizes
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         
-        // Send button wrapper
-        val sendWrapper = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f).apply {
+        // Send button - fixed size
+        val sendBtn = TextView(this).apply {
+            text = if (entry.isSynced) "SENT" else "SEND"
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createPressableDrawable(purple, purplePressed, 6f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
                 marginEnd = dpToPx(8)
             }
             isClickable = true
@@ -548,30 +539,10 @@ class FloatingWindowService : Service() {
                 sendToAnytype(entry)
             }
         }
-        sendWrapper.addView(TextView(this).apply {
-            text = if (entry.isSynced) "SENT" else "SEND"
-            setTextColor(Color.WHITE)
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createPressableDrawable(purple, purplePressed, 6f)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        })
-        buttonsRow.addView(sendWrapper)
+        buttonsRow.addView(sendBtn)
         
-        // Delete button wrapper
-        val deleteWrapper = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                deleteEntry(entry)
-            }
-        }
-        deleteWrapper.addView(TextView(this).apply {
+        // Delete button - fixed size
+        val deleteBtn = TextView(this).apply {
             text = "DELETE"
             setTextColor(Color.parseColor("#666666"))
             textSize = 11f
@@ -582,12 +553,14 @@ class FloatingWindowService : Service() {
                 Color.parseColor("#D0D0D0"),
                 6f
             )
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        })
-        buttonsRow.addView(deleteWrapper)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                deleteEntry(entry)
+            }
+        }
+        buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
         
