@@ -22,7 +22,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -58,18 +57,6 @@ class FloatingWindowService : Service() {
         const val PROXY_PORT = 31010
         const val CHANNEL_ID = "floating_channel"
         const val NOTIFICATION_ID = 1001
-        
-        val EXCLUDED_TYPE_KEYS = setOf(
-            "audio", "video", "file", "image", 
-            "participant", "spaceview", "template",
-            "ot-audio", "ot-video", "ot-file", "ot-image",
-            "ot-participant", "ot-template"
-        )
-        
-        val EXCLUDED_TYPE_NAMES = setOf(
-            "audio", "video", "file", "image", 
-            "space member", "template", "participant"
-        )
     }
 
     private var windowManager: WindowManager? = null
@@ -88,23 +75,15 @@ class FloatingWindowService : Service() {
     private var selectedTypeName = "Note"
     private var isConnected = false
     
-    // Views to update
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
-    private var emptyText: TextView? = null
     private var connectBtn: TextView? = null
     private var typeBtn: TextView? = null
     
-    // For dragging
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
-    private var isDragging = false
-    
-    // For resizing
-    private var currentWidth = 300
-    private var currentHeight = 450
 
     private var layoutParams: WindowManager.LayoutParams? = null
 
@@ -148,12 +127,8 @@ class FloatingWindowService : Service() {
                 CHANNEL_ID,
                 "GemNote Floating",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Floating window mode"
-                setShowBadge(false)
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            )
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
     
@@ -170,7 +145,6 @@ class FloatingWindowService : Service() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
     
@@ -200,7 +174,6 @@ class FloatingWindowService : Service() {
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
         
-        // Root layout
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = createRoundedDrawable(white, 16f)
@@ -208,7 +181,7 @@ class FloatingWindowService : Service() {
             clipToOutline = true
         }
         
-        // ===== HEADER (drag handle) =====
+        // ===== HEADER =====
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(purple)
@@ -225,19 +198,10 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        // Close button using TextView with touch handling
-        val closeBtn = TextView(this).apply {
-            text = "✕"
-            setTextColor(white)
-            textSize = 20f
-            gravity = Gravity.CENTER
+        val closeBtn = createClickableText("✕", white, 20f) {
+            closeFloatingWindow()
+        }.apply {
             setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
-        }
-        closeBtn.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                closeFloatingWindow()
-            }
-            true
         }
         header.addView(closeBtn)
         
@@ -246,7 +210,7 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
         
-        // ===== CONTENT AREA =====
+        // ===== CONTENT =====
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(lightPurple)
         }
@@ -258,9 +222,7 @@ class FloatingWindowService : Service() {
         
         scrollView.addView(entriesContainer)
         rootLayout.addView(scrollView, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
         // ===== BOTTOM BAR =====
@@ -271,64 +233,41 @@ class FloatingWindowService : Service() {
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // Paste button - use touch listener
-        val pasteBtn = TextView(this).apply {
-            text = "+"
-            setTextColor(purple)
-            textSize = 26f
+        // PASTE button
+        val pasteBtn = createClickableText("+", purple, 26f) {
+            pasteFromClipboard()
+        }.apply {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
         }
-        pasteBtn.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                pasteFromClipboard()
-            }
-            true
-        }
         bottomBar.addView(pasteBtn)
         
-        // Connect button
-        connectBtn = TextView(this).apply {
-            text = "CONNECT"
-            setTextColor(white)
-            textSize = 12f
-            gravity = Gravity.CENTER
+        // CONNECT button
+        connectBtn = createClickableText("CONNECT", white, 12f) {
+            onConnectClick()
+        }.apply {
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
                 marginStart = dpToPx(8)
                 marginEnd = dpToPx(4)
             }
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-        }
-        connectBtn?.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                onConnectClick()
-            }
-            true
         }
         bottomBar.addView(connectBtn)
         
-        // Type button
-        typeBtn = TextView(this).apply {
-            text = selectedTypeName.uppercase()
-            setTextColor(white)
-            textSize = 12f
-            gravity = Gravity.CENTER
+        // TYPE button
+        typeBtn = createClickableText(selectedTypeName.uppercase(), white, 12f) {
+            showToast("Type: $selectedTypeName")
+        }.apply {
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
                 marginStart = dpToPx(4)
             }
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-        }
-        typeBtn?.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                showToast("Type: $selectedTypeName")
-            }
-            true
         }
         bottomBar.addView(typeBtn)
         
@@ -346,13 +285,11 @@ class FloatingWindowService : Service() {
             setBackgroundColor(Color.parseColor("#E8E0F0"))
         }
         rootLayout.addView(resizeHandle, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dpToPx(20)
+            LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(20)
         ))
         
         floatingView = rootLayout
         
-        // Window params
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -360,11 +297,13 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
+        // Use FLAG_NOT_TOUCH_MODAL to allow touches on buttons while passing outside touches
         layoutParams = WindowManager.LayoutParams(
-            dpToPx(currentWidth),
-            dpToPx(currentHeight),
+            dpToPx(300),
+            dpToPx(450),
             layoutFlag,
-            0, // NO FLAGS - allow full interaction
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -374,12 +313,27 @@ class FloatingWindowService : Service() {
         
         windowManager?.addView(floatingView, layoutParams)
         
-        // Setup drag on header
         setupDrag(header)
         setupResize(resizeHandle)
         
         updateEntriesUI()
         updateStatus()
+    }
+    
+    // Create a clickable TextView that works in overlay
+    private fun createClickableText(text: String, color: Int, size: Float, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(color)
+            textSize = size
+            isClickable = true
+            isFocusable = true
+            
+            // Use both click listener and touch listener for reliability
+            setOnClickListener { 
+                onClick() 
+            }
+        }
     }
     
     private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
@@ -394,7 +348,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun setupDrag(dragView: View) {
-        dragView.setOnTouchListener { v, event ->
+        dragView.setOnTouchListener { _, event ->
             val params = layoutParams ?: return@setOnTouchListener false
             val wm = windowManager ?: return@setOnTouchListener false
             val view = floatingView ?: return@setOnTouchListener false
@@ -405,20 +359,12 @@ class FloatingWindowService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
-                    isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-                        isDragging = true
-                    }
-                    if (isDragging) {
-                        params.x = initialX + dx.toInt()
-                        params.y = initialY + dy.toInt()
-                        wm.updateViewLayout(view, params)
-                    }
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    wm.updateViewLayout(view, params)
                     true
                 }
                 else -> false
@@ -427,7 +373,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun setupResize(resizeView: View) {
-        resizeView.setOnTouchListener { v, event ->
+        resizeView.setOnTouchListener { _, event ->
             val params = layoutParams ?: return@setOnTouchListener false
             val wm = windowManager ?: return@setOnTouchListener false
             val view = floatingView ?: return@setOnTouchListener false
@@ -442,11 +388,8 @@ class FloatingWindowService : Service() {
                     val deltaX = (event.rawX - initialTouchX).toInt()
                     val deltaY = (event.rawY - initialTouchY).toInt()
                     
-                    val newWidth = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
-                    val newHeight = (params.height + deltaY).coerceIn(dpToPx(350), dpToPx(650))
-                    
-                    params.width = newWidth
-                    params.height = newHeight
+                    params.width = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
+                    params.height = (params.height + deltaY).coerceIn(dpToPx(350), dpToPx(650))
                     wm.updateViewLayout(view, params)
                     
                     initialTouchX = event.rawX
@@ -481,14 +424,13 @@ class FloatingWindowService : Service() {
         container.removeAllViews()
         
         if (entries.isEmpty()) {
-            val emptyView = TextView(this).apply {
+            container.addView(TextView(this).apply {
                 text = "No entries yet\n\nCopy text, then tap + to paste"
                 setTextColor(Color.parseColor("#888888"))
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setPadding(dpToPx(16), dpToPx(50), dpToPx(16), dpToPx(50))
-            }
-            container.addView(emptyView)
+            })
             return
         }
         
@@ -508,88 +450,67 @@ class FloatingWindowService : Service() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dpToPx(8)
-            }
+            ).apply { bottomMargin = dpToPx(8) }
         }
         
-        // Time row
+        // Header row
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         
-        val timeText = TextView(this).apply {
+        headerRow.addView(TextView(this).apply {
             text = dateFormat.format(Date(entry.timestamp))
             setTextColor(Color.parseColor("#999999"))
             textSize = 11f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        headerRow.addView(timeText)
+        })
         
         if (entry.isSynced) {
-            val syncedText = TextView(this).apply {
+            headerRow.addView(TextView(this).apply {
                 text = "✓ Synced"
                 setTextColor(Color.parseColor("#4CAF50"))
                 textSize = 11f
-            }
-            headerRow.addView(syncedText)
+            })
         }
         
         card.addView(headerRow)
         
         // Preview
-        val previewText = TextView(this).apply {
+        card.addView(TextView(this).apply {
             text = entry.preview
             setTextColor(Color.parseColor("#333333"))
             textSize = 13f
             maxLines = 2
             setPadding(0, dpToPx(6), 0, dpToPx(8))
-        }
-        card.addView(previewText)
+        })
         
         // Buttons
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         
-        val sendBtn = TextView(this).apply {
-            text = if (entry.isSynced) "SENT" else "SEND"
-            setTextColor(Color.WHITE)
-            textSize = 11f
-            gravity = Gravity.CENTER
+        buttonsRow.addView(createClickableText(
+            if (entry.isSynced) "SENT" else "SEND", Color.WHITE, 11f
+        ) {
+            sendToAnytype(entry)
+        }.apply {
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 6f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f).apply {
                 marginEnd = dpToPx(8)
             }
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-        }
-        sendBtn.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                sendToAnytype(entry)
-            }
-            true
-        }
-        buttonsRow.addView(sendBtn)
+        })
         
-        val deleteBtn = TextView(this).apply {
-            text = "DELETE"
-            setTextColor(Color.parseColor("#666666"))
-            textSize = 11f
-            gravity = Gravity.CENTER
+        buttonsRow.addView(createClickableText("DELETE", Color.parseColor("#666666"), 11f) {
+            deleteEntry(entry)
+        }.apply {
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E0E0E0"), 6f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f)
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-        }
-        deleteBtn.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                deleteEntry(entry)
-            }
-            true
-        }
-        buttonsRow.addView(deleteBtn)
+        })
         
         card.addView(buttonsRow)
         
@@ -597,6 +518,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun onConnectClick() {
+        showToast("Connect tapped!")
         if (isConnected) {
             showToast("Connected to: $selectedSpaceName")
         } else {
@@ -610,6 +532,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun pasteFromClipboard() {
+        showToast("Paste tapped!")
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip
         if (clip != null && clip.itemCount > 0) {
@@ -663,8 +586,7 @@ class FloatingWindowService : Service() {
     private fun getLocalSubnet(): String? {
         try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val wifiInfo = wifiManager.connectionInfo
-            val ip = wifiInfo.ipAddress
+            val ip = wifiManager.connectionInfo.ipAddress
             if (ip == 0) return null
             return String.format("%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff)
         } catch (e: Exception) {
@@ -676,8 +598,7 @@ class FloatingWindowService : Service() {
         val savedUrl = getBaseUrl()
         if (savedUrl.isNotEmpty()) {
             serviceScope.launch {
-                val success = tryConnect(savedUrl)
-                if (success) {
+                if (tryConnect(savedUrl)) {
                     handler.post { updateStatus() }
                 }
             }
@@ -688,8 +609,7 @@ class FloatingWindowService : Service() {
         val apiKey = getApiKey()
         if (apiKey.isEmpty()) return
         
-        val subnet = getLocalSubnet()
-        if (subnet == null) {
+        val subnet = getLocalSubnet() ?: run {
             showToast("Not on WiFi")
             return
         }
@@ -701,20 +621,18 @@ class FloatingWindowService : Service() {
             withContext(Dispatchers.IO) {
                 ips.chunked(50).forEach { batch ->
                     if (foundUrl != null) return@forEach
-                    val results = batch.map { ip ->
+                    foundUrl = batch.map { ip ->
                         async {
                             val url = "http://$ip:$PROXY_PORT"
                             if (checkAnytypeAt(url, apiKey)) url else null
                         }
-                    }.awaitAll()
-                    foundUrl = results.filterNotNull().firstOrNull()
+                    }.awaitAll().filterNotNull().firstOrNull()
                 }
             }
             
             if (foundUrl != null) {
                 prefs.edit().putString("base_url", foundUrl).apply()
-                val success = tryConnect(foundUrl!!)
-                if (success) {
+                if (tryConnect(foundUrl!!)) {
                     showToast("Connected!")
                     handler.post { updateStatus() }
                 }
@@ -727,21 +645,17 @@ class FloatingWindowService : Service() {
     private suspend fun checkAnytypeAt(url: String, apiKey: String): Boolean {
         return try {
             withTimeoutOrNull(2000) {
-                val api = createApi(url, apiKey)
-                api.getSpaces().isSuccessful
+                createApi(url, apiKey).getSpaces().isSuccessful
             } ?: false
         } catch (e: Exception) { false }
     }
     
     private suspend fun tryConnect(url: String): Boolean {
         return try {
-            val api = createApi(url, getApiKey())
-            val response = withContext(Dispatchers.IO) { api.getSpaces() }
-            
+            val response = withContext(Dispatchers.IO) { createApi(url, getApiKey()).getSpaces() }
             if (response.isSuccessful) {
                 spaces = response.body()?.data ?: emptyList()
                 isConnected = true
-                
                 if (selectedSpaceId.isEmpty() && spaces.isNotEmpty()) {
                     selectedSpaceId = spaces[0].id
                     selectedSpaceName = spaces[0].name
@@ -769,7 +683,6 @@ class FloatingWindowService : Service() {
         
         serviceScope.launch {
             try {
-                val api = createApi(getBaseUrl(), getApiKey())
                 val request = FloatingCreateObjectRequest(
                     name = title,
                     typeKey = selectedTypeKey,
@@ -777,7 +690,7 @@ class FloatingWindowService : Service() {
                     icon = FloatingObjectIcon(emoji = "📝", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) {
-                    api.createObject(selectedSpaceId, request)
+                    createApi(getBaseUrl(), getApiKey()).createObject(selectedSpaceId, request)
                 }
                 
                 if (response.isSuccessful) {
@@ -797,11 +710,10 @@ class FloatingWindowService : Service() {
     private fun createApi(baseUrl: String, apiKey: String): FloatingAnytypeApi {
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
+                chain.proceed(chain.request().newBuilder()
                     .addHeader("Authorization", "Bearer $apiKey")
                     .addHeader("Content-Type", "application/json")
-                    .build()
-                chain.proceed(request)
+                    .build())
             }
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
@@ -818,20 +730,15 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        floatingView?.let { view ->
-            try {
-                windowManager?.removeView(view)
-            } catch (e: Exception) {}
+        floatingView?.let { 
+            try { windowManager?.removeView(it) } catch (e: Exception) {}
         }
-        floatingView = null
     }
 }
 
-// Data classes
 data class FloatingSpace(val id: String, val name: String)
 data class FloatingApiResponse<T>(val data: T?)
 data class FloatingObjectIcon(val emoji: String? = null, val format: String? = null)
-data class FloatingObjectType(val id: String, val key: String, val name: String, val icon: FloatingObjectIcon? = null)
 data class FloatingCreateObjectRequest(
     val name: String,
     @SerializedName("type_key") val typeKey: String,
@@ -842,9 +749,6 @@ data class FloatingCreateObjectRequest(
 interface FloatingAnytypeApi {
     @GET("v1/spaces")
     suspend fun getSpaces(): retrofit2.Response<FloatingApiResponse<List<FloatingSpace>>>
-    
-    @GET("v1/spaces/{spaceId}/types")
-    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response<FloatingApiResponse<List<FloatingObjectType>>>
     
     @POST("v1/spaces/{spaceId}/objects")
     suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatingCreateObjectRequest): retrofit2.Response<Any>
