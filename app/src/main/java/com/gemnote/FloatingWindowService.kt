@@ -21,6 +21,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -168,14 +169,31 @@ class FloatingWindowService : Service() {
     private fun saveEntries() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
+    
+    // Create clickable button with proper touch handling
+    private fun makeClickable(view: TextView, onClick: () -> Unit) {
+        view.isClickable = true
+        view.isFocusable = true
+        view.isFocusableInTouchMode = false
+        
+        // Use post to ensure view is laid out before setting listener
+        view.post {
+            view.setOnClickListener { 
+                onClick()
+            }
+        }
+    }
 
     private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
         
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        // Root layout - don't intercept touches
+        val rootLayout = object : LinearLayout(this) {
+            override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+        }.apply {
+            orientation = VERTICAL
             background = createRoundedDrawable(white, 16f)
             elevation = 12f
             clipToOutline = true
@@ -204,10 +222,8 @@ class FloatingWindowService : Service() {
             textSize = 18f
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dpToPx(50), dpToPx(40))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { closeFloatingWindow() }
         }
+        makeClickable(closeBtn) { closeFloatingWindow() }
         header.addView(closeBtn)
         
         rootLayout.addView(header, LinearLayout.LayoutParams(
@@ -231,15 +247,19 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR =====
-        val bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // ===== BOTTOM BAR - don't intercept touches =====
+        val bottomBar = object : LinearLayout(this) {
+            override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+        }.apply {
+            orientation = HORIZONTAL
             setBackgroundColor(white)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
+            clipChildren = false
+            clipToPadding = false
         }
         
-        // PASTE button - this worked before
+        // PASTE button
         val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
@@ -248,11 +268,14 @@ class FloatingWindowService : Service() {
             gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { pasteFromClipboard() }
         }
+        makeClickable(pasteBtn) { pasteFromClipboard() }
         bottomBar.addView(pasteBtn)
+        
+        // Spacer
+        bottomBar.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(8), dpToPx(1))
+        })
         
         // CONNECT button
         val connectBtn = TextView(this).apply {
@@ -262,15 +285,16 @@ class FloatingWindowService : Service() {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44)).apply {
-                marginStart = dpToPx(8)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onConnectClick() }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44))
         }
         connectText = connectBtn
+        makeClickable(connectBtn) { onConnectClick() }
         bottomBar.addView(connectBtn)
+        
+        // Spacer
+        bottomBar.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(8), dpToPx(1))
+        })
         
         // TYPE button
         val typeBtn = TextView(this).apply {
@@ -280,14 +304,10 @@ class FloatingWindowService : Service() {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 8f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44)).apply {
-                marginStart = dpToPx(8)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { showToast("Type: $selectedTypeName") }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44))
         }
         typeText = typeBtn
+        makeClickable(typeBtn) { showToast("Type: $selectedTypeName") }
         bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
@@ -316,12 +336,11 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // FLAG_NOT_TOUCH_MODAL - this made + and DELETE work before
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -498,9 +517,13 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons row
-        val buttonsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Buttons row - don't intercept touches
+        val buttonsRow = object : LinearLayout(this) {
+            override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+        }.apply {
+            orientation = HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
         }
         
         // Send button
@@ -511,16 +534,17 @@ class FloatingWindowService : Service() {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(purple, 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
-                marginEnd = dpToPx(8)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { sendToAnytype(entry) }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
         }
+        makeClickable(sendBtn) { sendToAnytype(entry) }
         buttonsRow.addView(sendBtn)
         
-        // Delete button - this worked before
+        // Spacer
+        buttonsRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(8), dpToPx(1))
+        })
+        
+        // Delete button
         val deleteBtn = TextView(this).apply {
             text = "DELETE"
             setTextColor(Color.parseColor("#666666"))
@@ -529,10 +553,8 @@ class FloatingWindowService : Service() {
             gravity = Gravity.CENTER
             background = createRoundedDrawable(gray, 6f)
             layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { deleteEntry(entry) }
         }
+        makeClickable(deleteBtn) { deleteEntry(entry) }
         buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
