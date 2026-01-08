@@ -57,13 +57,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
     private lateinit var statusText: TextView
+    private lateinit var typeText: TextView
     private lateinit var btnConnect: Button
+    private lateinit var btnType: Button
     private lateinit var adapter: EntryAdapter
     
     private val entries = mutableListOf<ClipEntry>()
     private var spaces = listOf<Space>()
+    private var objectTypes = listOf<ObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
+    private var selectedTypeKey = "note"
+    private var selectedTypeName = "Note"
     private var isConnected = false
     private var isScanning = false
 
@@ -103,6 +108,10 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         btnConnect = findViewById(R.id.btnConnect)
         
+        // Type button - reuse btnService for type selection
+        btnType = findViewById(R.id.btnService)
+        btnType.text = "Type: Note"
+        
         adapter = EntryAdapter(
             entries,
             onSendClick = { entry -> sendToAnytype(entry) },
@@ -120,8 +129,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        findViewById<Button>(R.id.btnService).setOnClickListener {
-            toggleService()
+        btnType.setOnClickListener {
+            if (isConnected && selectedSpaceId.isNotEmpty()) {
+                fetchAndShowTypeSelector()
+            } else {
+                Toast.makeText(this, "Connect first", Toast.LENGTH_SHORT).show()
+            }
         }
         
         findViewById<FloatingActionButton>(R.id.fabPaste).setOnClickListener {
@@ -132,7 +145,10 @@ class MainActivity : AppCompatActivity() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
+        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
+        selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
         updateStatus()
+        updateTypeButton()
     }
     
     private fun getApiKey() = prefs.getString("api_key", "") ?: ""
@@ -208,6 +224,10 @@ class MainActivity : AppCompatActivity() {
                 btnConnect.text = "Connect"
             }
         }
+    }
+    
+    private fun updateTypeButton() {
+        btnType.text = "Type: $selectedTypeName"
     }
     
     private fun pasteFromClipboard() {
@@ -308,6 +328,59 @@ class MainActivity : AppCompatActivity() {
                     .apply()
                 updateStatus()
                 Toast.makeText(this, "Selected: ${space.name}", Toast.LENGTH_SHORT).show()
+                
+                // Reset type to Note when changing space
+                selectedTypeKey = "note"
+                selectedTypeName = "Note"
+                prefs.edit()
+                    .putString("type_key", selectedTypeKey)
+                    .putString("type_name", selectedTypeName)
+                    .apply()
+                updateTypeButton()
+            }
+            .show()
+    }
+    
+    private fun fetchAndShowTypeSelector() {
+        lifecycleScope.launch {
+            try {
+                val api = createApi(getBaseUrl(), getApiKey())
+                val response = withContext(Dispatchers.IO) { 
+                    api.getTypes(selectedSpaceId) 
+                }
+                
+                if (response.isSuccessful) {
+                    objectTypes = response.body()?.data ?: emptyList()
+                    showTypeSelector()
+                } else {
+                    Toast.makeText(this@MainActivity, "Failed to load types", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun showTypeSelector() {
+        if (objectTypes.isEmpty()) {
+            Toast.makeText(this, "No types found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val names = objectTypes.map { "${it.icon?.emoji ?: "📄"} ${it.name}" }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("Select Object Type")
+            .setItems(names) { _, which ->
+                val type = objectTypes[which]
+                selectedTypeKey = type.key
+                selectedTypeName = type.name
+                prefs.edit()
+                    .putString("type_key", selectedTypeKey)
+                    .putString("type_name", selectedTypeName)
+                    .apply()
+                updateTypeButton()
+                Toast.makeText(this, "Type: ${type.name}", Toast.LENGTH_SHORT).show()
             }
             .show()
     }
@@ -498,7 +571,7 @@ class MainActivity : AppCompatActivity() {
                 val api = createApi(getBaseUrl(), getApiKey())
                 val request = CreateObjectRequest(
                     name = title,
-                    typeKey = "note",
+                    typeKey = selectedTypeKey,
                     body = body,
                     icon = ObjectIcon(emoji = "📝", format = "emoji")
                 )
@@ -510,7 +583,7 @@ class MainActivity : AppCompatActivity() {
                     entry.isSynced = true
                     saveEntries()
                     updateUI()
-                    Toast.makeText(this@MainActivity, "Sent: $title", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Sent to $selectedTypeName: $title", Toast.LENGTH_SHORT).show()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: ""
                     Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
@@ -518,30 +591,6 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             }
-        }
-    }
-    
-    private fun toggleService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, 
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
-                return
-            }
-        }
-        
-        val intent = Intent(this, ClipboardService::class.java)
-        if (ClipboardService.isRunning) {
-            stopService(intent)
-            Toast.makeText(this, "Service stopped", Toast.LENGTH_SHORT).show()
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-            Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show()
         }
     }
     
@@ -600,8 +649,15 @@ data class Space(val id: String, val name: String)
 data class ApiResponse<T>(val data: T?)
 
 data class ObjectIcon(
-    val emoji: String,
-    val format: String
+    val emoji: String? = null,
+    val format: String? = null
+)
+
+data class ObjectType(
+    val id: String,
+    val key: String,
+    val name: String,
+    val icon: ObjectIcon? = null
 )
 
 data class CreateObjectRequest(
@@ -615,6 +671,11 @@ data class CreateObjectRequest(
 interface AnytypeApi {
     @GET("v1/spaces")
     suspend fun getSpaces(): retrofit2.Response<ApiResponse<List<Space>>>
+    
+    @GET("v1/spaces/{spaceId}/types")
+    suspend fun getTypes(
+        @Path("spaceId") spaceId: String
+    ): retrofit2.Response<ApiResponse<List<ObjectType>>>
     
     @POST("v1/spaces/{spaceId}/objects")
     suspend fun createObject(
