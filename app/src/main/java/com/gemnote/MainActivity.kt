@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -16,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -29,8 +31,11 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -39,6 +44,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
     private lateinit var statusText: TextView
+    private lateinit var btnConnect: Button
     private lateinit var adapter: EntryAdapter
     
     private val entries = mutableListOf<ClipEntry>()
@@ -57,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var isConnected = false
+    private var isScanning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,8 +78,9 @@ class MainActivity : AppCompatActivity() {
         
         handleShareIntent(intent)
         
+        // Auto-connect on start
         if (getApiKey().isNotEmpty()) {
-            connectToAnytype()
+            autoConnect()
         }
     }
     
@@ -92,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerView)
         emptyView = findViewById(R.id.emptyView)
         statusText = findViewById(R.id.statusText)
+        btnConnect = findViewById(R.id.btnConnect)
         
         adapter = EntryAdapter(
             entries,
@@ -102,11 +112,11 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
         
-        findViewById<Button>(R.id.btnConnect).setOnClickListener {
-            if (isConnected) {
-                showSpaceSelector()
-            } else {
-                showSettingsDialog()
+        btnConnect.setOnClickListener {
+            when {
+                isScanning -> Toast.makeText(this, "Scanning...", Toast.LENGTH_SHORT).show()
+                isConnected -> showSpaceSelector()
+                else -> showConnectionOptions()
             }
         }
         
@@ -126,7 +136,11 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun getApiKey() = prefs.getString("api_key", "") ?: ""
-    private fun getBaseUrl() = prefs.getString("base_url", "http://192.168.1.100:31009") ?: "http://192.168.1.100:31009"
+    private fun getBaseUrl() = prefs.getString("base_url", "") ?: ""
+    
+    private fun saveBaseUrl(url: String) {
+        prefs.edit().putString("base_url", url).apply()
+    }
     
     private fun loadEntries() {
         val json = prefs.getString("entries", "[]")
@@ -172,15 +186,27 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun updateStatus() {
-        if (isConnected && selectedSpaceName.isNotEmpty()) {
-            statusText.text = "Connected to: $selectedSpaceName"
-            statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
-        } else if (isConnected) {
-            statusText.text = "Connected - Select a space"
-            statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_dark))
-        } else {
-            statusText.text = "Not connected"
-            statusText.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+        when {
+            isScanning -> {
+                statusText.text = "🔍 Scanning network..."
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_blue_dark))
+                btnConnect.text = "Scanning..."
+            }
+            isConnected && selectedSpaceName.isNotEmpty() -> {
+                statusText.text = "✓ Connected to: $selectedSpaceName"
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
+                btnConnect.text = "Change Space"
+            }
+            isConnected -> {
+                statusText.text = "✓ Connected - Select a space"
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_dark))
+                btnConnect.text = "Select Space"
+            }
+            else -> {
+                statusText.text = "Not connected"
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+                btnConnect.text = "Connect"
+            }
         }
     }
     
@@ -199,13 +225,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun showConnectionOptions() {
+        val options = arrayOf("🔍 Auto-scan network", "⚙️ Manual settings")
+        
+        AlertDialog.Builder(this)
+            .setTitle("Connect to Anytype")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        if (getApiKey().isEmpty()) {
+                            showApiKeyDialog { autoScanNetwork() }
+                        } else {
+                            autoScanNetwork()
+                        }
+                    }
+                    1 -> showSettingsDialog()
+                }
+            }
+            .show()
+    }
+    
+    private fun showApiKeyDialog(onSuccess: () -> Unit) {
+        val view = layoutInflater.inflate(R.layout.dialog_apikey, null)
+        val apiKeyInput = view.findViewById<EditText>(R.id.etApiKey)
+        apiKeyInput.setText(getApiKey())
+        
+        AlertDialog.Builder(this)
+            .setTitle("Enter API Key")
+            .setView(view)
+            .setPositiveButton("Save") { _, _ ->
+                val key = apiKeyInput.text.toString().trim()
+                if (key.isNotEmpty()) {
+                    prefs.edit().putString("api_key", key).apply()
+                    onSuccess()
+                } else {
+                    Toast.makeText(this, "API key is required", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
     private fun showSettingsDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_settings, null)
         val apiKeyInput = view.findViewById<EditText>(R.id.etApiKey)
         val baseUrlInput = view.findViewById<EditText>(R.id.etBaseUrl)
         
         apiKeyInput.setText(getApiKey())
-        baseUrlInput.setText(getBaseUrl())
+        baseUrlInput.setText(getBaseUrl().ifEmpty { "http://192.168.1.100:31009" })
         
         AlertDialog.Builder(this)
             .setTitle("Anytype Settings")
@@ -215,7 +282,7 @@ class MainActivity : AppCompatActivity() {
                     .putString("api_key", apiKeyInput.text.toString().trim())
                     .putString("base_url", baseUrlInput.text.toString().trim())
                     .apply()
-                connectToAnytype()
+                connectToAnytype(baseUrlInput.text.toString().trim())
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -245,9 +312,139 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
     
-    private fun connectToAnytype() {
+    // Get local IP subnet
+    private fun getLocalSubnet(): String? {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiInfo = wifiManager.connectionInfo
+            val ip = wifiInfo.ipAddress
+            
+            if (ip == 0) return null
+            
+            val ipString = String.format(
+                "%d.%d.%d",
+                ip and 0xff,
+                ip shr 8 and 0xff,
+                ip shr 16 and 0xff
+            )
+            return ipString
+        } catch (e: Exception) {
+            return null
+        }
+    }
+    
+    // Auto-connect: try saved URL first, then scan
+    private fun autoConnect() {
+        val savedUrl = getBaseUrl()
+        if (savedUrl.isNotEmpty()) {
+            lifecycleScope.launch {
+                val success = tryConnect(savedUrl)
+                if (!success) {
+                    // Saved URL failed, try scanning
+                    autoScanNetwork()
+                }
+            }
+        } else {
+            autoScanNetwork()
+        }
+    }
+    
+    // Scan network for Anytype
+    private fun autoScanNetwork() {
         val apiKey = getApiKey()
-        val baseUrl = getBaseUrl()
+        if (apiKey.isEmpty()) {
+            Toast.makeText(this, "Please set API key first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val subnet = getLocalSubnet()
+        if (subnet == null) {
+            Toast.makeText(this, "Not connected to WiFi", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        isScanning = true
+        updateStatus()
+        
+        lifecycleScope.launch {
+            var foundUrl: String? = null
+            
+            // Scan IPs 1-254 in parallel batches
+            val ips = (1..254).map { "$subnet.$it" }
+            
+            withContext(Dispatchers.IO) {
+                // Scan in batches of 50 for efficiency
+                ips.chunked(50).forEach { batch ->
+                    if (foundUrl != null) return@forEach
+                    
+                    val results = batch.map { ip ->
+                        async {
+                            val url = "http://$ip:31009"
+                            if (checkAnytypeAt(url, apiKey)) url else null
+                        }
+                    }.awaitAll()
+                    
+                    foundUrl = results.filterNotNull().firstOrNull()
+                }
+            }
+            
+            isScanning = false
+            
+            if (foundUrl != null) {
+                saveBaseUrl(foundUrl!!)
+                connectToAnytype(foundUrl!!)
+                Toast.makeText(this@MainActivity, "Found Anytype at $foundUrl", Toast.LENGTH_SHORT).show()
+            } else {
+                updateStatus()
+                Toast.makeText(this@MainActivity, "Anytype not found on network", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    // Check if Anytype API is available at URL
+    private suspend fun checkAnytypeAt(url: String, apiKey: String): Boolean {
+        return try {
+            withTimeoutOrNull(2000) {
+                val api = createApi(url, apiKey)
+                val response = api.getSpaces()
+                response.isSuccessful
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    // Try to connect to specific URL
+    private suspend fun tryConnect(url: String): Boolean {
+        return try {
+            val api = createApi(url, getApiKey())
+            val response = withContext(Dispatchers.IO) { api.getSpaces() }
+            
+            if (response.isSuccessful) {
+                spaces = response.body()?.data ?: emptyList()
+                isConnected = true
+                
+                if (selectedSpaceId.isEmpty() && spaces.isNotEmpty()) {
+                    selectedSpaceId = spaces[0].id
+                    selectedSpaceName = spaces[0].name
+                    prefs.edit()
+                        .putString("space_id", selectedSpaceId)
+                        .putString("space_name", selectedSpaceName)
+                        .apply()
+                }
+                
+                withContext(Dispatchers.Main) { updateStatus() }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun connectToAnytype(baseUrl: String) {
+        val apiKey = getApiKey()
         
         if (apiKey.isBlank() || baseUrl.isBlank()) {
             Toast.makeText(this, "Please configure API settings", Toast.LENGTH_SHORT).show()
@@ -262,6 +459,7 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     spaces = response.body()?.data ?: emptyList()
                     isConnected = true
+                    saveBaseUrl(baseUrl)
                     
                     if (selectedSpaceId.isEmpty() && spaces.isNotEmpty()) {
                         selectedSpaceId = spaces[0].id
@@ -313,11 +511,21 @@ class MainActivity : AppCompatActivity() {
                     updateUI()
                     Toast.makeText(this@MainActivity, "Sent: $title", Toast.LENGTH_SHORT).show()
                 } else {
-                    val errorBody = response.errorBody()?.string() ?: "Unknown error"
-                    Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
+                    // Connection might have changed, try to reconnect
+                    val errorBody = response.errorBody()?.string() ?: ""
+                    if (response.code() in listOf(401, 403, 404)) {
+                        isConnected = false
+                        updateStatus()
+                        Toast.makeText(this@MainActivity, "Connection lost. Please reconnect.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
+                    }
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                // Network error - try to rescan
+                isConnected = false
+                updateStatus()
+                Toast.makeText(this@MainActivity, "Network error. Tap Connect to rescan.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -376,11 +584,8 @@ class MainActivity : AppCompatActivity() {
                     .build()
                 chain.proceed(request)
             }
-            .addInterceptor(HttpLoggingInterceptor().apply { 
-                level = HttpLoggingInterceptor.Level.BODY 
-            })
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
             .build()
         
         return Retrofit.Builder()
