@@ -215,7 +215,7 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        // Close button - use touch
+        // Close button
         val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(white)
@@ -223,7 +223,7 @@ class FloatingWindowService : Service() {
             gravity = Gravity.CENTER
             setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
         }
-        setupTouchButton(closeBtn) { closeFloatingWindow() }
+        setupTouchButton(closeBtn, "Close") { closeFloatingWindow() }
         header.addView(closeBtn)
         
         rootLayout.addView(header, LinearLayout.LayoutParams(
@@ -269,7 +269,7 @@ class FloatingWindowService : Service() {
             )
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
         }
-        setupTouchButton(pasteBtn) { pasteFromClipboard() }
+        setupTouchButton(pasteBtn, "Paste") { pasteFromClipboard() }
         bottomBar.addView(pasteBtn)
         
         // CONNECT button
@@ -285,7 +285,7 @@ class FloatingWindowService : Service() {
                 marginEnd = dpToPx(4)
             }
         }
-        setupTouchButton(connectBtn!!) { onConnectClick() }
+        setupTouchButton(connectBtn!!, "Connect") { onConnectClick() }
         bottomBar.addView(connectBtn)
         
         // TYPE button
@@ -300,7 +300,7 @@ class FloatingWindowService : Service() {
                 marginStart = dpToPx(4)
             }
         }
-        setupTouchButton(typeBtn!!) { showToast("Type: $selectedTypeName") }
+        setupTouchButton(typeBtn!!, "Type") { showToast("Type: $selectedTypeName") }
         bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
@@ -350,8 +350,8 @@ class FloatingWindowService : Service() {
         updateStatus()
     }
     
-    // Setup touch handling that works with FLAG_NOT_FOCUSABLE
-    private fun setupTouchButton(view: View, onClick: () -> Unit) {
+    // Setup touch handling - with debug
+    private fun setupTouchButton(view: View, name: String, onClick: () -> Unit) {
         var downTime = 0L
         var downX = 0f
         var downY = 0f
@@ -369,9 +369,16 @@ class FloatingWindowService : Service() {
                     v.isPressed = false
                     val elapsed = System.currentTimeMillis() - downTime
                     val moved = Math.abs(event.x - downX) + Math.abs(event.y - downY)
-                    // Only trigger if it was a quick tap without much movement
+                    
+                    // Debug: show what's happening
+                    showToast("$name tapped! (${elapsed}ms, ${moved.toInt()}px)")
+                    
                     if (elapsed < 500 && moved < dpToPx(20)) {
-                        onClick()
+                        try {
+                            onClick()
+                        } catch (e: Exception) {
+                            showToast("Error: ${e.message}")
+                        }
                     }
                     true
                 }
@@ -550,7 +557,7 @@ class FloatingWindowService : Service() {
                 marginEnd = dpToPx(8)
             }
         }
-        setupTouchButton(sendBtn) { sendToAnytype(entry) }
+        setupTouchButton(sendBtn, "Send") { sendToAnytype(entry) }
         buttonsRow.addView(sendBtn)
         
         val deleteBtn = TextView(this).apply {
@@ -566,7 +573,7 @@ class FloatingWindowService : Service() {
             )
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f)
         }
-        setupTouchButton(deleteBtn) { deleteEntry(entry) }
+        setupTouchButton(deleteBtn, "Delete") { deleteEntry(entry) }
         buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
@@ -575,11 +582,12 @@ class FloatingWindowService : Service() {
     }
     
     private fun onConnectClick() {
+        showToast("onConnectClick called!")
         if (isConnected) {
             showToast("Connected to: $selectedSpaceName")
         } else {
             if (getApiKey().isNotEmpty()) {
-                showToast("Scanning...")
+                showToast("Scanning network...")
                 autoScanNetwork()
             } else {
                 showToast("Set API key in main app first")
@@ -588,6 +596,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun pasteFromClipboard() {
+        showToast("pasteFromClipboard called!")
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip
         if (clip != null && clip.itemCount > 0) {
@@ -595,14 +604,15 @@ class FloatingWindowService : Service() {
             if (!text.isNullOrBlank()) {
                 addEntry(text)
             } else {
-                showToast("Clipboard empty")
+                showToast("Clipboard is empty")
             }
         } else {
-            showToast("Clipboard empty")
+            showToast("Clipboard is empty")
         }
     }
     
     private fun addEntry(content: String) {
+        showToast("addEntry called!")
         if (content.isBlank()) return
         if (entries.any { it.content == content }) {
             showToast("Already exists")
@@ -621,10 +631,11 @@ class FloatingWindowService : Service() {
         
         saveEntries()
         updateEntriesUI()
-        showToast("Added!")
+        showToast("Entry added!")
     }
     
     private fun deleteEntry(entry: ClipEntry) {
+        showToast("deleteEntry called!")
         entries.removeAll { it.id == entry.id }
         saveEntries()
         updateEntriesUI()
@@ -632,6 +643,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun closeFloatingWindow() {
+        showToast("closeFloatingWindow called!")
         sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
         stopSelf()
     }
@@ -725,6 +737,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun sendToAnytype(entry: ClipEntry) {
+        showToast("sendToAnytype called!")
         if (!isConnected || selectedSpaceId.isEmpty()) {
             showToast("Not connected")
             return
