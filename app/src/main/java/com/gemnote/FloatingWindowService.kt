@@ -22,10 +22,9 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
-imimport android.widget.ScrollView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -253,20 +252,15 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR - Handle touches on the bar itself =====
-        val bottomBar = object : LinearLayout(this) {
-            override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
-                // Don't intercept - let children handle touches
-                return false
-            }
-        }.apply {
-            orientation = HORIZONTAL
+        // ===== BOTTOM BAR =====
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // PASTE button - Simple click
+        // PASTE button
         val pasteBtn = TextView(this).apply {
             text = "+"
             setTextColor(purple)
@@ -354,7 +348,7 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // Try without FLAG_NOT_FOCUSABLE
+        // Use FLAG_NOT_TOUCH_MODAL to allow clicks on buttons
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
