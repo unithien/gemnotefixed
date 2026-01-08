@@ -21,7 +21,6 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -193,7 +192,7 @@ class FloatingWindowService : Service() {
         val rootLayout = object : LinearLayout(this) {
             override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
         }.apply {
-            orientation = VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = createRoundedDrawable(white, 16f)
             elevation = 12f
             clipToOutline = true
@@ -251,7 +250,7 @@ class FloatingWindowService : Service() {
         val bottomBar = object : LinearLayout(this) {
             override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
         }.apply {
-            orientation = HORIZONTAL
+            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
@@ -518,10 +517,10 @@ class FloatingWindowService : Service() {
         })
         
         // Buttons row - don't intercept touches
-        val buttonsRow = object : LinearLayout(this) {
+        val buttonsRow = object : LinearLayout(this@FloatingWindowService) {
             override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
         }.apply {
-            orientation = HORIZONTAL
+            orientation = LinearLayout.HORIZONTAL
             clipChildren = false
             clipToPadding = false
         }
