@@ -1,6 +1,5 @@
 package com.gemnote
 
-import android.Manifest
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.ClipboardManager
@@ -8,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -25,8 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -58,7 +54,6 @@ class MainActivity : AppCompatActivity() {
         const val PROXY_PORT = 31010
         const val OVERLAY_PERMISSION_CODE = 1001
         
-        // Types to exclude from the selector
         val EXCLUDED_TYPE_KEYS = setOf(
             "audio", "video", "file", "image", 
             "participant", "spaceview", "template",
@@ -76,7 +71,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
     private lateinit var statusText: TextView
-    private lateinit var typeText: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnType: Button
     private lateinit var floatingToggle: SwitchCompat
@@ -92,11 +86,9 @@ class MainActivity : AppCompatActivity() {
     private var isConnected = false
     private var isScanning = false
     
-    // Receiver for floating window close event
     private val floatingClosedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             floatingToggle.isChecked = false
-            // Reload entries in case they were modified in floating window
             loadEntries()
         }
     }
@@ -111,7 +103,6 @@ class MainActivity : AppCompatActivity() {
         loadEntries()
         loadSettings()
         
-        // Register broadcast receiver
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(floatingClosedReceiver, IntentFilter("com.gemnote.FLOATING_CLOSED"), RECEIVER_NOT_EXPORTED)
         } else {
@@ -132,7 +123,6 @@ class MainActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
-        // Reload entries when coming back to the app
         loadEntries()
     }
     
@@ -156,7 +146,6 @@ class MainActivity : AppCompatActivity() {
         btnConnect = findViewById(R.id.btnConnect)
         floatingToggle = findViewById(R.id.floatingToggle)
         
-        // Type button - reuse btnService for type selection
         btnType = findViewById(R.id.btnService)
         btnType.text = "Type: Note"
         
@@ -166,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             onDeleteClick = { entry -> deleteEntry(entry) }
         )
         
-        // Normal layout - items will be at bottom due to layout_gravity in XML
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
         
@@ -190,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             pasteFromClipboard()
         }
         
-        // Setup floating toggle
+        // Floating toggle - simplified
         floatingToggle.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 if (checkOverlayPermission()) {
@@ -243,7 +231,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startFloatingWindow() {
-        // Start floating window service as foreground service
+        Toast.makeText(this, "Starting floating window...", Toast.LENGTH_SHORT).show()
+        
         val intent = Intent(this, FloatingWindowService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
@@ -251,12 +240,12 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
         
-        // Minimize app to background
-        moveTaskToBack(true)
+        // DON'T minimize - let user see if floating window appears
+        // User can press home button manually
+        Toast.makeText(this, "Press HOME to see floating window", Toast.LENGTH_LONG).show()
     }
     
     private fun stopFloatingWindow() {
-        // Stop floating window service
         val intent = Intent(this, FloatingWindowService::class.java)
         stopService(intent)
     }
@@ -444,7 +433,6 @@ class MainActivity : AppCompatActivity() {
                 updateStatus()
                 Toast.makeText(this, "Selected: ${space.name}", Toast.LENGTH_SHORT).show()
                 
-                // Reset type to Note when changing space
                 selectedTypeKey = "note"
                 selectedTypeName = "Note"
                 prefs.edit()
@@ -467,12 +455,10 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val allTypes = response.body()?.data ?: emptyList()
                     
-                    // Filter out unwanted types
                     objectTypes = allTypes.filter { type ->
                         val keyLower = type.key.lowercase()
                         val nameLower = type.name.lowercase()
                         
-                        // Exclude if key or name matches exclusion lists
                         !EXCLUDED_TYPE_KEYS.any { keyLower.contains(it) } &&
                         !EXCLUDED_TYPE_NAMES.any { nameLower == it }
                     }
@@ -506,7 +492,6 @@ class MainActivity : AppCompatActivity() {
                     .putString("type_name", selectedTypeName)
                     .apply()
                 updateTypeButton()
-                // No toast notification when selecting type
             }
             .show()
     }
@@ -681,15 +666,13 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // Split content into title (first line) and body (rest)
         val lines = entry.content.lines()
         val title = lines.firstOrNull()?.take(100)?.trimStart('#', ' ') ?: "Note from GemNote"
         
-        // Body is everything after the first line (if any)
         val body = if (lines.size > 1) {
             lines.drop(1).joinToString("\n").trim()
         } else {
-            null  // No body if only one line
+            null
         }
         
         lifecycleScope.launch {
@@ -709,7 +692,6 @@ class MainActivity : AppCompatActivity() {
                     entry.isSynced = true
                     saveEntries()
                     updateUI()
-                    // Short success toast
                     Toast.makeText(this@MainActivity, "success \uD83C\uDF89", Toast.LENGTH_SHORT).show()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: ""
@@ -838,7 +820,6 @@ class EntryAdapter(
         holder.tvTime.text = dateFormat.format(Date(entry.timestamp))
         holder.tvPreview.text = entry.preview
         holder.tvSynced.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
-        // Always keep Send button enabled so user can send multiple times
         holder.btnSend.isEnabled = true
         holder.btnSend.text = if (entry.isSynced) "Sent" else "Send"
         holder.btnSend.setOnClickListener { onSendClick(entry) }
