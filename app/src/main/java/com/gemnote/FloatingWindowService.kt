@@ -13,6 +13,7 @@ import android.graphics.PixelFormat
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -27,7 +28,6 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -55,6 +55,7 @@ import java.util.concurrent.TimeUnit
 class FloatingWindowService : Service() {
 
     companion object {
+        private const val TAG = "FloatingService"
         const val PROXY_PORT = 31010
         const val CHANNEL_ID = "floating_channel"
         const val NOTIFICATION_ID = 1001
@@ -72,17 +73,10 @@ class FloatingWindowService : Service() {
         )
     }
 
-    private lateinit var windowManager: WindowManager
-    private lateinit var floatingView: View
+    private var windowManager: WindowManager? = null
+    private var floatingView: View? = null
     private lateinit var prefs: SharedPreferences
-    private lateinit var adapter: FloatingEntryAdapter
-    
-    // Views
-    private lateinit var recyclerView: RecyclerView
-    private lateinit var emptyView: TextView
-    private lateinit var statusText: TextView
-    private lateinit var btnConnect: Button
-    private lateinit var btnType: Button
+    private var adapter: FloatingEntryAdapter? = null
     
     private val entries = mutableListOf<ClipEntry>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -103,34 +97,41 @@ class FloatingWindowService : Service() {
     private var initialTouchY = 0f
     
     // For resizing
-    private var initialWidth = 320
-    private var initialHeight = 480
-    private var minWidth = 250
-    private var minHeight = 350
-    private var maxWidth = 450
-    private var maxHeight = 650
+    private var currentWidth = 300
+    private var currentHeight = 450
+    private val minWidth = 250
+    private val minHeight = 350
+    private val maxWidth = 450
+    private val maxHeight = 650
 
-    private lateinit var layoutParams: WindowManager.LayoutParams
+    private var layoutParams: WindowManager.LayoutParams? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "Service onCreate")
         
-        // Start as foreground service immediately
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
-        
-        prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        
-        loadSettings()
-        loadEntries()
-        createFloatingWindow()
-        
-        // Auto-connect if API key exists
-        if (getApiKey().isNotEmpty()) {
-            autoConnect()
+        try {
+            createNotificationChannel()
+            startForeground(NOTIFICATION_ID, createNotification())
+            Log.d(TAG, "Foreground started")
+            
+            prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
+            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+            
+            loadSettings()
+            loadEntries()
+            createFloatingWindow()
+            
+            if (getApiKey().isNotEmpty()) {
+                autoConnect()
+            }
+            
+            Log.d(TAG, "Service started successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onCreate: ${e.message}", e)
+            stopSelf()
         }
     }
     
@@ -159,7 +160,7 @@ class FloatingWindowService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("GemNote")
             .setContentText("Floating mode active")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -188,49 +189,59 @@ class FloatingWindowService : Service() {
     }
 
     private fun createFloatingWindow() {
-        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        floatingView = inflater.inflate(R.layout.layout_floating, null)
+        Log.d(TAG, "Creating floating window")
         
-        val density = resources.displayMetrics.density
-        val widthPx = (initialWidth * density).toInt()
-        val heightPx = (initialHeight * density).toInt()
-        
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
+        try {
+            val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+            floatingView = inflater.inflate(R.layout.layout_floating_simple, null)
+            
+            val density = resources.displayMetrics.density
+            val widthPx = (currentWidth * density).toInt()
+            val heightPx = (currentHeight * density).toInt()
+            
+            val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            }
+            
+            layoutParams = WindowManager.LayoutParams(
+                widthPx,
+                heightPx,
+                layoutFlag,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = 50
+                y = 100
+            }
+            
+            windowManager?.addView(floatingView, layoutParams)
+            Log.d(TAG, "View added to WindowManager")
+            
+            setupViews()
+            setupDragAndResize()
+            updateStatus()
+            updateTypeButton()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating floating window: ${e.message}", e)
+            throw e
         }
-        
-        layoutParams = WindowManager.LayoutParams(
-            widthPx,
-            heightPx,
-            layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 50
-            y = 100
-        }
-        
-        windowManager.addView(floatingView, layoutParams)
-        
-        setupViews()
-        setupDragAndResize()
-        updateStatus()
-        updateTypeButton()
     }
     
     private fun setupViews() {
-        recyclerView = floatingView.findViewById(R.id.recyclerView)
-        emptyView = floatingView.findViewById(R.id.emptyView)
-        statusText = floatingView.findViewById(R.id.statusText)
-        btnConnect = floatingView.findViewById(R.id.btnConnect)
-        btnType = floatingView.findViewById(R.id.btnType)
+        val view = floatingView ?: return
         
-        val btnClose = floatingView.findViewById<ImageButton>(R.id.btnClose)
-        val fabPaste = floatingView.findViewById<FloatingActionButton>(R.id.fabPaste)
+        val recyclerView = view.findViewById<RecyclerView>(R.id.recyclerView)
+        val emptyView = view.findViewById<TextView>(R.id.emptyView)
+        val statusText = view.findViewById<TextView>(R.id.statusText)
+        val btnConnect = view.findViewById<Button>(R.id.btnConnect)
+        val btnType = view.findViewById<Button>(R.id.btnType)
+        val btnClose = view.findViewById<ImageButton>(R.id.btnClose)
+        val fabPaste = view.findViewById<Button>(R.id.fabPaste)
         
         // Setup adapter
         adapter = FloatingEntryAdapter(
@@ -241,12 +252,14 @@ class FloatingWindowService : Service() {
         
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
-        updateUI()
+        
+        // Update empty view
+        emptyView.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
         
         // Close button
         btnClose.setOnClickListener {
-            stopSelf()
-            sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
+            closeFloatingWindow()
         }
         
         // Paste button
@@ -256,41 +269,46 @@ class FloatingWindowService : Service() {
         
         // Connect button
         btnConnect.setOnClickListener {
-            when {
-                isScanning -> Toast.makeText(this, "Scanning...", Toast.LENGTH_SHORT).show()
-                isConnected -> showSpaceSelectorDialog()
-                else -> showConnectionOptionsDialog()
+            if (isConnected) {
+                Toast.makeText(this, "Connected to: $selectedSpaceName", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Tap to scan...", Toast.LENGTH_SHORT).show()
+                if (getApiKey().isNotEmpty()) {
+                    autoScanNetwork()
+                } else {
+                    Toast.makeText(this, "Set API key in main app first", Toast.LENGTH_SHORT).show()
+                }
             }
         }
         
         // Type button
         btnType.setOnClickListener {
-            if (isConnected && selectedSpaceId.isNotEmpty()) {
-                fetchAndShowTypeSelector()
-            } else {
-                Toast.makeText(this, "Connect first", Toast.LENGTH_SHORT).show()
-            }
+            Toast.makeText(this, "Type: $selectedTypeName", Toast.LENGTH_SHORT).show()
         }
     }
     
     private fun setupDragAndResize() {
-        val dragHandle = floatingView.findViewById<View>(R.id.dragHandle)
-        val resizeHandle = floatingView.findViewById<View>(R.id.resizeHandle)
+        val view = floatingView ?: return
+        val params = layoutParams ?: return
+        val wm = windowManager ?: return
+        
+        val dragHandle = view.findViewById<View>(R.id.dragHandle)
+        val resizeHandle = view.findViewById<View>(R.id.resizeHandle)
         
         // Drag by header
-        dragHandle.setOnTouchListener { _, event ->
+        dragHandle?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = layoutParams.x
-                    initialY = layoutParams.y
+                    initialX = params.x
+                    initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
-                    layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(floatingView, layoutParams)
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    wm.updateViewLayout(view, params)
                     true
                 }
                 else -> false
@@ -298,13 +316,11 @@ class FloatingWindowService : Service() {
         }
         
         // Resize by bottom handle
-        resizeHandle.setOnTouchListener { _, event ->
+        resizeHandle?.setOnTouchListener { _, event ->
             val density = resources.displayMetrics.density
             
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialWidth = (layoutParams.width / density).toInt()
-                    initialHeight = (layoutParams.height / density).toInt()
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     true
@@ -313,16 +329,21 @@ class FloatingWindowService : Service() {
                     val deltaX = ((event.rawX - initialTouchX) / density).toInt()
                     val deltaY = ((event.rawY - initialTouchY) / density).toInt()
                     
-                    var newWidth = initialWidth + deltaX
-                    var newHeight = initialHeight + deltaY
+                    var newWidth = currentWidth + deltaX
+                    var newHeight = currentHeight + deltaY
                     
                     newWidth = newWidth.coerceIn(minWidth, maxWidth)
                     newHeight = newHeight.coerceIn(minHeight, maxHeight)
                     
-                    layoutParams.width = (newWidth * density).toInt()
-                    layoutParams.height = (newHeight * density).toInt()
+                    params.width = (newWidth * density).toInt()
+                    params.height = (newHeight * density).toInt()
                     
-                    windowManager.updateViewLayout(floatingView, layoutParams)
+                    wm.updateViewLayout(view, params)
+                    
+                    currentWidth = newWidth
+                    currentHeight = newHeight
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
                     true
                 }
                 else -> false
@@ -331,34 +352,43 @@ class FloatingWindowService : Service() {
     }
     
     private fun updateUI() {
-        adapter.notifyDataSetChanged()
-        emptyView.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
-        recyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
+        adapter?.notifyDataSetChanged()
+        floatingView?.let { view ->
+            view.findViewById<TextView>(R.id.emptyView)?.visibility = 
+                if (entries.isEmpty()) View.VISIBLE else View.GONE
+            view.findViewById<RecyclerView>(R.id.recyclerView)?.visibility = 
+                if (entries.isEmpty()) View.GONE else View.VISIBLE
+        }
     }
     
     private fun updateStatus() {
-        when {
-            isScanning -> {
-                statusText.text = "🔍 Scanning..."
-                btnConnect.text = "Scanning..."
-            }
-            isConnected && selectedSpaceName.isNotEmpty() -> {
-                statusText.text = "✓ $selectedSpaceName"
-                btnConnect.text = "Space"
-            }
-            isConnected -> {
-                statusText.text = "✓ Connected"
-                btnConnect.text = "Space"
-            }
-            else -> {
-                statusText.text = "Not connected"
-                btnConnect.text = "Connect"
+        floatingView?.let { view ->
+            val statusText = view.findViewById<TextView>(R.id.statusText)
+            val btnConnect = view.findViewById<Button>(R.id.btnConnect)
+            
+            when {
+                isScanning -> {
+                    statusText?.text = "Scanning..."
+                    btnConnect?.text = "Scanning"
+                }
+                isConnected && selectedSpaceName.isNotEmpty() -> {
+                    statusText?.text = "✓ $selectedSpaceName"
+                    btnConnect?.text = "Space"
+                }
+                isConnected -> {
+                    statusText?.text = "✓ Connected"
+                    btnConnect?.text = "Space"
+                }
+                else -> {
+                    statusText?.text = "GemNote"
+                    btnConnect?.text = "Connect"
+                }
             }
         }
     }
     
     private fun updateTypeButton() {
-        btnType.text = selectedTypeName
+        floatingView?.findViewById<Button>(R.id.btnType)?.text = selectedTypeName
     }
     
     private fun pasteFromClipboard() {
@@ -378,7 +408,10 @@ class FloatingWindowService : Service() {
     
     private fun addEntry(content: String) {
         if (content.isBlank()) return
-        if (entries.any { it.content == content }) return
+        if (entries.any { it.content == content }) {
+            Toast.makeText(this, "Already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
         
         val preview = content.take(100).replace("\n", " ")
         entries.add(0, ClipEntry(
@@ -401,201 +434,12 @@ class FloatingWindowService : Service() {
         updateUI()
     }
     
+    private fun closeFloatingWindow() {
+        sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
+        stopSelf()
+    }
+    
     // ========== Connection Logic ==========
-    
-    private fun showConnectionOptionsDialog() {
-        // Need to make window focusable for dialog
-        layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        windowManager.updateViewLayout(floatingView, layoutParams)
-        
-        val options = arrayOf("🔍 Auto-scan network", "⚙️ Manual settings")
-        
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("Connect to Anytype")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        if (getApiKey().isEmpty()) {
-                            showApiKeyDialog { autoScanNetwork() }
-                        } else {
-                            autoScanNetwork()
-                        }
-                    }
-                    1 -> showSettingsDialog()
-                }
-            }
-            .setOnDismissListener {
-                // Make window not focusable again
-                layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, layoutParams)
-            }
-            .show()
-    }
-    
-    private fun showApiKeyDialog(onSuccess: () -> Unit) {
-        layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        windowManager.updateViewLayout(floatingView, layoutParams)
-        
-        val input = EditText(this).apply {
-            hint = "Enter API Key"
-            setText(getApiKey())
-            setPadding(50, 30, 50, 30)
-        }
-        
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("API Key")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val key = input.text.toString().trim()
-                if (key.isNotEmpty()) {
-                    prefs.edit().putString("api_key", key).apply()
-                    onSuccess()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .setOnDismissListener {
-                layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, layoutParams)
-            }
-            .show()
-    }
-    
-    private fun showSettingsDialog() {
-        layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        windowManager.updateViewLayout(floatingView, layoutParams)
-        
-        val layout = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 30)
-        }
-        
-        val apiKeyInput = EditText(this).apply {
-            hint = "API Key"
-            setText(getApiKey())
-        }
-        
-        val baseUrlInput = EditText(this).apply {
-            hint = "Base URL"
-            setText(getBaseUrl().ifEmpty { "http://192.168.1.100:$PROXY_PORT" })
-        }
-        
-        layout.addView(TextView(this).apply { text = "API Key:" })
-        layout.addView(apiKeyInput)
-        layout.addView(TextView(this).apply { 
-            text = "Base URL:"
-            setPadding(0, 20, 0, 0)
-        })
-        layout.addView(baseUrlInput)
-        
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("Settings")
-            .setView(layout)
-            .setPositiveButton("Save") { _, _ ->
-                prefs.edit()
-                    .putString("api_key", apiKeyInput.text.toString().trim())
-                    .putString("base_url", baseUrlInput.text.toString().trim())
-                    .apply()
-                connectToAnytype(baseUrlInput.text.toString().trim())
-            }
-            .setNegativeButton("Cancel", null)
-            .setOnDismissListener {
-                layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, layoutParams)
-            }
-            .show()
-    }
-    
-    private fun showSpaceSelectorDialog() {
-        if (spaces.isEmpty()) {
-            Toast.makeText(this, "No spaces", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        windowManager.updateViewLayout(floatingView, layoutParams)
-        
-        val names = spaces.map { it.name }.toTypedArray()
-        
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("Select Space")
-            .setItems(names) { _, which ->
-                val space = spaces[which]
-                selectedSpaceId = space.id
-                selectedSpaceName = space.name
-                prefs.edit()
-                    .putString("space_id", selectedSpaceId)
-                    .putString("space_name", selectedSpaceName)
-                    .apply()
-                updateStatus()
-                
-                // Reset type
-                selectedTypeKey = "note"
-                selectedTypeName = "Note"
-                prefs.edit()
-                    .putString("type_key", selectedTypeKey)
-                    .putString("type_name", selectedTypeName)
-                    .apply()
-                updateTypeButton()
-            }
-            .setOnDismissListener {
-                layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, layoutParams)
-            }
-            .show()
-    }
-    
-    private fun fetchAndShowTypeSelector() {
-        serviceScope.launch {
-            try {
-                val api = createApi(getBaseUrl(), getApiKey())
-                val response = withContext(Dispatchers.IO) {
-                    api.getTypes(selectedSpaceId)
-                }
-                
-                if (response.isSuccessful) {
-                    val allTypes = response.body()?.data ?: emptyList()
-                    
-                    objectTypes = allTypes.filter { type ->
-                        val keyLower = type.key.lowercase()
-                        val nameLower = type.name.lowercase()
-                        !EXCLUDED_TYPE_KEYS.any { keyLower.contains(it) } &&
-                        !EXCLUDED_TYPE_NAMES.any { nameLower == it }
-                    }
-                    
-                    showTypeSelectorDialog()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this@FloatingWindowService, "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    
-    private fun showTypeSelectorDialog() {
-        if (objectTypes.isEmpty()) return
-        
-        layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        windowManager.updateViewLayout(floatingView, layoutParams)
-        
-        val names = objectTypes.map { "${it.icon?.emoji ?: "📄"} ${it.name}" }.toTypedArray()
-        
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("Select Type")
-            .setItems(names) { _, which ->
-                val type = objectTypes[which]
-                selectedTypeKey = type.key
-                selectedTypeName = type.name
-                prefs.edit()
-                    .putString("type_key", selectedTypeKey)
-                    .putString("type_name", selectedTypeName)
-                    .apply()
-                updateTypeButton()
-            }
-            .setOnDismissListener {
-                layoutParams.flags = layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                windowManager.updateViewLayout(floatingView, layoutParams)
-            }
-            .show()
-    }
     
     private fun getLocalSubnet(): String? {
         try {
@@ -614,8 +458,7 @@ class FloatingWindowService : Service() {
         if (savedUrl.isNotEmpty()) {
             serviceScope.launch {
                 val success = tryConnect(savedUrl)
-                if (!success && getApiKey().isNotEmpty()) {
-                    // Don't auto-scan, just update status
+                if (!success) {
                     updateStatus()
                 }
             }
@@ -760,7 +603,7 @@ class FloatingWindowService : Service() {
                     entry.isSynced = true
                     saveEntries()
                     updateUI()
-                    Toast.makeText(this@FloatingWindowService, "success 🎉", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@FloatingWindowService, "Sent! 🎉", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this@FloatingWindowService, "Failed", Toast.LENGTH_SHORT).show()
                 }
@@ -793,14 +636,20 @@ class FloatingWindowService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "Service onDestroy")
         serviceScope.cancel()
-        if (::floatingView.isInitialized) {
-            windowManager.removeView(floatingView)
+        floatingView?.let { view ->
+            try {
+                windowManager?.removeView(view)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing view: ${e.message}")
+            }
         }
+        floatingView = null
     }
 }
 
-// Adapter for floating window
+// Adapter for floating window - reuse item_entry.xml
 class FloatingEntryAdapter(
     private val entries: List<ClipEntry>,
     private val onSendClick: (ClipEntry) -> Unit,
@@ -818,8 +667,9 @@ class FloatingEntryAdapter(
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        // Use the regular item_entry layout
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_entry_floating, parent, false)
+            .inflate(R.layout.item_entry, parent, false)
         return ViewHolder(view)
     }
     
@@ -828,7 +678,6 @@ class FloatingEntryAdapter(
         holder.tvTime.text = dateFormat.format(Date(entry.timestamp))
         holder.tvPreview.text = entry.preview
         holder.tvSynced.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
-        holder.btnSend.isEnabled = true
         holder.btnSend.text = if (entry.isSynced) "Sent" else "Send"
         holder.btnSend.setOnClickListener { onSendClick(entry) }
         holder.btnDelete.setOnClickListener { onDeleteClick(entry) }
