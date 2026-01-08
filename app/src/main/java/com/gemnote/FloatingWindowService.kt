@@ -9,11 +9,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -21,8 +23,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -55,7 +58,6 @@ import java.util.concurrent.TimeUnit
 class FloatingWindowService : Service() {
 
     companion object {
-        private const val TAG = "FloatingService"
         const val PROXY_PORT = 31010
         const val CHANNEL_ID = "floating_channel"
         const val NOTIFICATION_ID = 1001
@@ -80,6 +82,7 @@ class FloatingWindowService : Service() {
     
     private val entries = mutableListOf<ClipEntry>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val handler = Handler(Looper.getMainLooper())
     
     private var spaces = listOf<FloatingSpace>()
     private var objectTypes = listOf<FloatingObjectType>()
@@ -88,21 +91,12 @@ class FloatingWindowService : Service() {
     private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
-    private var isScanning = false
     
     // For dragging
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
-    
-    // For resizing
-    private var currentWidth = 300
-    private var currentHeight = 450
-    private val minWidth = 250
-    private val minHeight = 350
-    private val maxWidth = 450
-    private val maxHeight = 650
 
     private var layoutParams: WindowManager.LayoutParams? = null
 
@@ -110,28 +104,43 @@ class FloatingWindowService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Service onCreate")
+        
+        showToast("Service onCreate")
         
         try {
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, createNotification())
-            Log.d(TAG, "Foreground started")
+            showToast("Foreground started")
             
             prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             
             loadSettings()
             loadEntries()
-            createFloatingWindow()
+            
+            // Delay window creation slightly
+            handler.postDelayed({
+                try {
+                    createFloatingWindow()
+                    showToast("Window created!")
+                } catch (e: Exception) {
+                    showToast("Window error: ${e.message}")
+                }
+            }, 500)
             
             if (getApiKey().isNotEmpty()) {
                 autoConnect()
             }
             
-            Log.d(TAG, "Service started successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Error in onCreate: ${e.message}", e)
+            showToast("onCreate error: ${e.message}")
             stopSelf()
+        }
+    }
+    
+    private fun showToast(msg: String) {
+        handler.post {
+            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
         }
     }
     
@@ -189,114 +198,127 @@ class FloatingWindowService : Service() {
     }
 
     private fun createFloatingWindow() {
-        Log.d(TAG, "Creating floating window")
+        showToast("Creating window...")
         
-        try {
-            val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-            floatingView = inflater.inflate(R.layout.layout_floating_simple, null)
-            
-            val density = resources.displayMetrics.density
-            val widthPx = (currentWidth * density).toInt()
-            val heightPx = (currentHeight * density).toInt()
-            
-            val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            }
-            
-            layoutParams = WindowManager.LayoutParams(
-                widthPx,
-                heightPx,
-                layoutFlag,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                x = 50
-                y = 100
-            }
-            
-            windowManager?.addView(floatingView, layoutParams)
-            Log.d(TAG, "View added to WindowManager")
-            
-            setupViews()
-            setupDragAndResize()
-            updateStatus()
-            updateTypeButton()
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating floating window: ${e.message}", e)
-            throw e
+        // Create a simple view programmatically instead of inflating XML
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+            elevation = 10f
         }
-    }
-    
-    private fun setupViews() {
-        val view = floatingView ?: return
         
-        val recyclerView = view.findViewById<RecyclerView>(R.id.recyclerView)
-        val emptyView = view.findViewById<TextView>(R.id.emptyView)
-        val statusText = view.findViewById<TextView>(R.id.statusText)
-        val btnConnect = view.findViewById<Button>(R.id.btnConnect)
-        val btnType = view.findViewById<Button>(R.id.btnType)
-        val btnClose = view.findViewById<ImageButton>(R.id.btnClose)
-        val fabPaste = view.findViewById<Button>(R.id.fabPaste)
-        
-        // Setup adapter
-        adapter = FloatingEntryAdapter(
-            entries,
-            onSendClick = { entry -> sendToAnytype(entry) },
-            onDeleteClick = { entry -> deleteEntry(entry) }
-        )
-        
-        recyclerView.layoutManager = LinearLayoutManager(this)
-        recyclerView.adapter = adapter
-        
-        // Update empty view
-        emptyView.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
-        recyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
-        
-        // Close button
-        btnClose.setOnClickListener {
-            closeFloatingWindow()
+        // Header (purple bar with drag + close)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.parseColor("#6B4EAA"))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 10, 20, 10)
         }
+        
+        val titleText = TextView(this).apply {
+            text = if (selectedSpaceName.isNotEmpty()) "✓ $selectedSpaceName" else "GemNote"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        header.addView(titleText)
+        
+        val closeBtn = Button(this).apply {
+            text = "X"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener {
+                closeFloatingWindow()
+            }
+        }
+        header.addView(closeBtn)
+        
+        rootLayout.addView(header, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        
+        // Content area
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#F5F0FF"))
+            setPadding(20, 20, 20, 20)
+            gravity = Gravity.CENTER
+        }
+        
+        val infoText = TextView(this).apply {
+            text = "Floating Window Works!\n\nEntries: ${entries.size}\n\nDrag header to move"
+            setTextColor(Color.parseColor("#333333"))
+            textSize = 14f
+            gravity = Gravity.CENTER
+        }
+        content.addView(infoText)
         
         // Paste button
-        fabPaste.setOnClickListener {
-            pasteFromClipboard()
-        }
-        
-        // Connect button
-        btnConnect.setOnClickListener {
-            if (isConnected) {
-                Toast.makeText(this, "Connected to: $selectedSpaceName", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Tap to scan...", Toast.LENGTH_SHORT).show()
-                if (getApiKey().isNotEmpty()) {
-                    autoScanNetwork()
-                } else {
-                    Toast.makeText(this, "Set API key in main app first", Toast.LENGTH_SHORT).show()
-                }
+        val pasteBtn = Button(this).apply {
+            text = "+ Paste"
+            setBackgroundColor(Color.parseColor("#6B4EAA"))
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                pasteFromClipboard()
             }
         }
+        content.addView(pasteBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 20 })
         
-        // Type button
-        btnType.setOnClickListener {
-            Toast.makeText(this, "Type: $selectedTypeName", Toast.LENGTH_SHORT).show()
+        rootLayout.addView(content, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        ))
+        
+        floatingView = rootLayout
+        
+        // Window params
+        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
         }
+        
+        layoutParams = WindowManager.LayoutParams(
+            dpToPx(280),
+            dpToPx(350),
+            layoutFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 100
+            y = 200
+        }
+        
+        // Add view to window manager
+        try {
+            windowManager?.addView(floatingView, layoutParams)
+            showToast("View added!")
+        } catch (e: Exception) {
+            showToast("addView error: ${e.message}")
+            throw e
+        }
+        
+        // Setup drag
+        setupDrag(header)
     }
     
-    private fun setupDragAndResize() {
-        val view = floatingView ?: return
-        val params = layoutParams ?: return
-        val wm = windowManager ?: return
-        
-        val dragHandle = view.findViewById<View>(R.id.dragHandle)
-        val resizeHandle = view.findViewById<View>(R.id.resizeHandle)
-        
-        // Drag by header
-        dragHandle?.setOnTouchListener { _, event ->
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+    
+    private fun setupDrag(dragView: View) {
+        dragView.setOnTouchListener { _, event ->
+            val params = layoutParams ?: return@setOnTouchListener false
+            val wm = windowManager ?: return@setOnTouchListener false
+            val view = floatingView ?: return@setOnTouchListener false
+            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -314,81 +336,6 @@ class FloatingWindowService : Service() {
                 else -> false
             }
         }
-        
-        // Resize by bottom handle
-        resizeHandle?.setOnTouchListener { _, event ->
-            val density = resources.displayMetrics.density
-            
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val deltaX = ((event.rawX - initialTouchX) / density).toInt()
-                    val deltaY = ((event.rawY - initialTouchY) / density).toInt()
-                    
-                    var newWidth = currentWidth + deltaX
-                    var newHeight = currentHeight + deltaY
-                    
-                    newWidth = newWidth.coerceIn(minWidth, maxWidth)
-                    newHeight = newHeight.coerceIn(minHeight, maxHeight)
-                    
-                    params.width = (newWidth * density).toInt()
-                    params.height = (newHeight * density).toInt()
-                    
-                    wm.updateViewLayout(view, params)
-                    
-                    currentWidth = newWidth
-                    currentHeight = newHeight
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-    
-    private fun updateUI() {
-        adapter?.notifyDataSetChanged()
-        floatingView?.let { view ->
-            view.findViewById<TextView>(R.id.emptyView)?.visibility = 
-                if (entries.isEmpty()) View.VISIBLE else View.GONE
-            view.findViewById<RecyclerView>(R.id.recyclerView)?.visibility = 
-                if (entries.isEmpty()) View.GONE else View.VISIBLE
-        }
-    }
-    
-    private fun updateStatus() {
-        floatingView?.let { view ->
-            val statusText = view.findViewById<TextView>(R.id.statusText)
-            val btnConnect = view.findViewById<Button>(R.id.btnConnect)
-            
-            when {
-                isScanning -> {
-                    statusText?.text = "Scanning..."
-                    btnConnect?.text = "Scanning"
-                }
-                isConnected && selectedSpaceName.isNotEmpty() -> {
-                    statusText?.text = "✓ $selectedSpaceName"
-                    btnConnect?.text = "Space"
-                }
-                isConnected -> {
-                    statusText?.text = "✓ Connected"
-                    btnConnect?.text = "Space"
-                }
-                else -> {
-                    statusText?.text = "GemNote"
-                    btnConnect?.text = "Connect"
-                }
-            }
-        }
-    }
-    
-    private fun updateTypeButton() {
-        floatingView?.findViewById<Button>(R.id.btnType)?.text = selectedTypeName
     }
     
     private fun pasteFromClipboard() {
@@ -399,17 +346,17 @@ class FloatingWindowService : Service() {
             if (!text.isNullOrBlank()) {
                 addEntry(text)
             } else {
-                Toast.makeText(this, "Clipboard empty", Toast.LENGTH_SHORT).show()
+                showToast("Clipboard empty")
             }
         } else {
-            Toast.makeText(this, "Clipboard empty", Toast.LENGTH_SHORT).show()
+            showToast("Clipboard empty")
         }
     }
     
     private fun addEntry(content: String) {
         if (content.isBlank()) return
         if (entries.any { it.content == content }) {
-            Toast.makeText(this, "Already exists", Toast.LENGTH_SHORT).show()
+            showToast("Already exists")
             return
         }
         
@@ -424,14 +371,7 @@ class FloatingWindowService : Service() {
         if (entries.size > 50) entries.removeLast()
         
         saveEntries()
-        updateUI()
-        Toast.makeText(this, "Added!", Toast.LENGTH_SHORT).show()
-    }
-    
-    private fun deleteEntry(entry: ClipEntry) {
-        entries.removeAll { it.id == entry.id }
-        saveEntries()
-        updateUI()
+        showToast("Added! (${entries.size} entries)")
     }
     
     private fun closeFloatingWindow() {
@@ -439,84 +379,13 @@ class FloatingWindowService : Service() {
         stopSelf()
     }
     
-    // ========== Connection Logic ==========
-    
-    private fun getLocalSubnet(): String? {
-        try {
-            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val wifiInfo = wifiManager.connectionInfo
-            val ip = wifiInfo.ipAddress
-            if (ip == 0) return null
-            return String.format("%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff)
-        } catch (e: Exception) {
-            return null
-        }
-    }
-    
     private fun autoConnect() {
         val savedUrl = getBaseUrl()
         if (savedUrl.isNotEmpty()) {
             serviceScope.launch {
-                val success = tryConnect(savedUrl)
-                if (!success) {
-                    updateStatus()
-                }
+                tryConnect(savedUrl)
             }
         }
-    }
-    
-    private fun autoScanNetwork() {
-        val apiKey = getApiKey()
-        if (apiKey.isEmpty()) {
-            Toast.makeText(this, "Set API key first", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        val subnet = getLocalSubnet()
-        if (subnet == null) {
-            Toast.makeText(this, "Not on WiFi", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        isScanning = true
-        updateStatus()
-        
-        serviceScope.launch {
-            var foundUrl: String? = null
-            val ips = (1..254).map { "$subnet.$it" }
-            
-            withContext(Dispatchers.IO) {
-                ips.chunked(50).forEach { batch ->
-                    if (foundUrl != null) return@forEach
-                    val results = batch.map { ip ->
-                        async {
-                            val url = "http://$ip:$PROXY_PORT"
-                            if (checkAnytypeAt(url, apiKey)) url else null
-                        }
-                    }.awaitAll()
-                    foundUrl = results.filterNotNull().firstOrNull()
-                }
-            }
-            
-            isScanning = false
-            
-            if (foundUrl != null) {
-                prefs.edit().putString("base_url", foundUrl).apply()
-                connectToAnytype(foundUrl!!)
-            } else {
-                updateStatus()
-                Toast.makeText(this@FloatingWindowService, "Not found", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    
-    private suspend fun checkAnytypeAt(url: String, apiKey: String): Boolean {
-        return try {
-            withTimeoutOrNull(2000) {
-                val api = createApi(url, apiKey)
-                api.getSpaces().isSuccessful
-            } ?: false
-        } catch (e: Exception) { false }
     }
     
     private suspend fun tryConnect(url: String): Boolean {
@@ -536,81 +405,9 @@ class FloatingWindowService : Service() {
                         .putString("space_name", selectedSpaceName)
                         .apply()
                 }
-                
-                withContext(Dispatchers.Main) { updateStatus() }
                 true
             } else false
         } catch (e: Exception) { false }
-    }
-    
-    private fun connectToAnytype(baseUrl: String) {
-        serviceScope.launch {
-            try {
-                val api = createApi(baseUrl, getApiKey())
-                val response = withContext(Dispatchers.IO) { api.getSpaces() }
-                
-                if (response.isSuccessful) {
-                    spaces = response.body()?.data ?: emptyList()
-                    isConnected = true
-                    prefs.edit().putString("base_url", baseUrl).apply()
-                    
-                    if (selectedSpaceId.isEmpty() && spaces.isNotEmpty()) {
-                        selectedSpaceId = spaces[0].id
-                        selectedSpaceName = spaces[0].name
-                        prefs.edit()
-                            .putString("space_id", selectedSpaceId)
-                            .putString("space_name", selectedSpaceName)
-                            .apply()
-                    }
-                    
-                    updateStatus()
-                    Toast.makeText(this@FloatingWindowService, "Connected!", Toast.LENGTH_SHORT).show()
-                } else {
-                    isConnected = false
-                    updateStatus()
-                }
-            } catch (e: Exception) {
-                isConnected = false
-                updateStatus()
-            }
-        }
-    }
-    
-    private fun sendToAnytype(entry: ClipEntry) {
-        if (!isConnected || selectedSpaceId.isEmpty()) {
-            Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        val lines = entry.content.lines()
-        val title = lines.firstOrNull()?.take(100)?.trimStart('#', ' ') ?: "Note"
-        val body = if (lines.size > 1) lines.drop(1).joinToString("\n").trim() else null
-        
-        serviceScope.launch {
-            try {
-                val api = createApi(getBaseUrl(), getApiKey())
-                val request = FloatingCreateObjectRequest(
-                    name = title,
-                    typeKey = selectedTypeKey,
-                    body = body,
-                    icon = FloatingObjectIcon(emoji = "📝", format = "emoji")
-                )
-                val response = withContext(Dispatchers.IO) {
-                    api.createObject(selectedSpaceId, request)
-                }
-                
-                if (response.isSuccessful) {
-                    entry.isSynced = true
-                    saveEntries()
-                    updateUI()
-                    Toast.makeText(this@FloatingWindowService, "Sent! 🎉", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this@FloatingWindowService, "Failed", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this@FloatingWindowService, "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
     }
     
     private fun createApi(baseUrl: String, apiKey: String): FloatingAnytypeApi {
@@ -636,20 +433,19 @@ class FloatingWindowService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "Service onDestroy")
         serviceScope.cancel()
         floatingView?.let { view ->
             try {
                 windowManager?.removeView(view)
             } catch (e: Exception) {
-                Log.e(TAG, "Error removing view: ${e.message}")
+                // ignore
             }
         }
         floatingView = null
     }
 }
 
-// Adapter for floating window - reuse item_entry.xml
+// Adapter for floating window
 class FloatingEntryAdapter(
     private val entries: List<ClipEntry>,
     private val onSendClick: (ClipEntry) -> Unit,
@@ -667,7 +463,6 @@ class FloatingEntryAdapter(
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        // Use the regular item_entry layout
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_entry, parent, false)
         return ViewHolder(view)
@@ -686,7 +481,7 @@ class FloatingEntryAdapter(
     override fun getItemCount() = entries.size
 }
 
-// Data classes for floating service
+// Data classes
 data class FloatingSpace(val id: String, val name: String)
 data class FloatingApiResponse<T>(val data: T?)
 data class FloatingObjectIcon(val emoji: String? = null, val format: String? = null)
