@@ -52,6 +52,11 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        // Port for the proxy (not the same as Anytype's internal port)
+        const val PROXY_PORT = 31010
+    }
+
     private lateinit var prefs: SharedPreferences
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: TextView
@@ -272,7 +277,7 @@ class MainActivity : AppCompatActivity() {
         val baseUrlInput = view.findViewById<EditText>(R.id.etBaseUrl)
         
         apiKeyInput.setText(getApiKey())
-        baseUrlInput.setText(getBaseUrl().ifEmpty { "http://192.168.1.100:31009" })
+        baseUrlInput.setText(getBaseUrl().ifEmpty { "http://192.168.1.100:$PROXY_PORT" })
         
         AlertDialog.Builder(this)
             .setTitle("Anytype Settings")
@@ -349,7 +354,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // Scan network for Anytype
+    // Scan network for Anytype proxy
     private fun autoScanNetwork() {
         val apiKey = getApiKey()
         if (apiKey.isEmpty()) {
@@ -379,7 +384,8 @@ class MainActivity : AppCompatActivity() {
                     
                     val results = batch.map { ip ->
                         async {
-                            val url = "http://$ip:31009"
+                            // Scan for proxy port (31010)
+                            val url = "http://$ip:$PROXY_PORT"
                             if (checkAnytypeAt(url, apiKey)) url else null
                         }
                     }.awaitAll()
@@ -396,7 +402,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Found Anytype at $foundUrl", Toast.LENGTH_SHORT).show()
             } else {
                 updateStatus()
-                Toast.makeText(this@MainActivity, "Anytype not found on network", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Anytype proxy not found.\nMake sure START_PROXY.bat is running on your PC!", Toast.LENGTH_LONG).show()
             }
         }
     }
