@@ -13,6 +13,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -168,9 +169,25 @@ class FloatingWindowService : Service() {
     private fun saveEntries() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
+    
+    private fun createPressableDrawable(normalColor: Int, pressedColor: Int, radius: Float): StateListDrawable {
+        val pressed = GradientDrawable().apply {
+            setColor(pressedColor)
+            cornerRadius = dpToPx(radius.toInt()).toFloat()
+        }
+        val normal = GradientDrawable().apply {
+            setColor(normalColor)
+            cornerRadius = dpToPx(radius.toInt()).toFloat()
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), pressed)
+            addState(intArrayOf(), normal)
+        }
+    }
 
     private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
+        val purplePressed = Color.parseColor("#5A3D99")
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
         
@@ -198,11 +215,15 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        val closeBtn = createClickableText("✕", white, 20f) {
-            closeFloatingWindow()
-        }.apply {
+        // Close button - use touch
+        val closeBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(white)
+            textSize = 20f
+            gravity = Gravity.CENTER
             setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
         }
+        setupTouchButton(closeBtn) { closeFloatingWindow() }
         header.addView(closeBtn)
         
         rootLayout.addView(header, LinearLayout.LayoutParams(
@@ -213,6 +234,7 @@ class FloatingWindowService : Service() {
         // ===== CONTENT =====
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(lightPurple)
+            isVerticalScrollBarEnabled = false
         }
         
         entriesContainer = LinearLayout(this).apply {
@@ -234,41 +256,51 @@ class FloatingWindowService : Service() {
         }
         
         // PASTE button
-        val pasteBtn = createClickableText("+", purple, 26f) {
-            pasteFromClipboard()
-        }.apply {
+        val pasteBtn = TextView(this).apply {
+            text = "+"
+            setTextColor(purple)
+            textSize = 26f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
+            background = createPressableDrawable(
+                Color.parseColor("#E8E0F0"),
+                Color.parseColor("#D0C8E8"),
+                50f
+            )
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
         }
+        setupTouchButton(pasteBtn) { pasteFromClipboard() }
         bottomBar.addView(pasteBtn)
         
         // CONNECT button
-        connectBtn = createClickableText("CONNECT", white, 12f) {
-            onConnectClick()
-        }.apply {
+        connectBtn = TextView(this).apply {
+            text = "CONNECT"
+            setTextColor(white)
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 8f)
+            background = createPressableDrawable(purple, purplePressed, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
                 marginStart = dpToPx(8)
                 marginEnd = dpToPx(4)
             }
         }
+        setupTouchButton(connectBtn!!) { onConnectClick() }
         bottomBar.addView(connectBtn)
         
         // TYPE button
-        typeBtn = createClickableText(selectedTypeName.uppercase(), white, 12f) {
-            showToast("Type: $selectedTypeName")
-        }.apply {
+        typeBtn = TextView(this).apply {
+            text = selectedTypeName.uppercase()
+            setTextColor(white)
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 8f)
+            background = createPressableDrawable(purple, purplePressed, 8f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
                 marginStart = dpToPx(4)
             }
         }
+        setupTouchButton(typeBtn!!) { showToast("Type: $selectedTypeName") }
         bottomBar.addView(typeBtn)
         
         rootLayout.addView(bottomBar, LinearLayout.LayoutParams(
@@ -297,13 +329,11 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // Use FLAG_NOT_TOUCH_MODAL to allow touches on buttons while passing outside touches
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -320,18 +350,36 @@ class FloatingWindowService : Service() {
         updateStatus()
     }
     
-    // Create a clickable TextView that works in overlay
-    private fun createClickableText(text: String, color: Int, size: Float, onClick: () -> Unit): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(color)
-            textSize = size
-            isClickable = true
-            isFocusable = true
-            
-            // Use both click listener and touch listener for reliability
-            setOnClickListener { 
-                onClick() 
+    // Setup touch handling that works with FLAG_NOT_FOCUSABLE
+    private fun setupTouchButton(view: View, onClick: () -> Unit) {
+        var downTime = 0L
+        var downX = 0f
+        var downY = 0f
+        
+        view.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downTime = System.currentTimeMillis()
+                    downX = event.x
+                    downY = event.y
+                    v.isPressed = true
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.isPressed = false
+                    val elapsed = System.currentTimeMillis() - downTime
+                    val moved = Math.abs(event.x - downX) + Math.abs(event.y - downY)
+                    // Only trigger if it was a quick tap without much movement
+                    if (elapsed < 500 && moved < dpToPx(20)) {
+                        onClick()
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.isPressed = false
+                    true
+                }
+                else -> false
             }
         }
     }
@@ -441,6 +489,7 @@ class FloatingWindowService : Service() {
     
     private fun createEntryCard(entry: ClipEntry): View {
         val purple = Color.parseColor("#6B4EAA")
+        val purplePressed = Color.parseColor("#5A3D99")
         
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -490,27 +539,35 @@ class FloatingWindowService : Service() {
             orientation = LinearLayout.HORIZONTAL
         }
         
-        buttonsRow.addView(createClickableText(
-            if (entry.isSynced) "SENT" else "SEND", Color.WHITE, 11f
-        ) {
-            sendToAnytype(entry)
-        }.apply {
+        val sendBtn = TextView(this).apply {
+            text = if (entry.isSynced) "SENT" else "SEND"
+            setTextColor(Color.WHITE)
+            textSize = 11f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 6f)
+            background = createPressableDrawable(purple, purplePressed, 6f)
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f).apply {
                 marginEnd = dpToPx(8)
             }
-        })
+        }
+        setupTouchButton(sendBtn) { sendToAnytype(entry) }
+        buttonsRow.addView(sendBtn)
         
-        buttonsRow.addView(createClickableText("DELETE", Color.parseColor("#666666"), 11f) {
-            deleteEntry(entry)
-        }.apply {
+        val deleteBtn = TextView(this).apply {
+            text = "DELETE"
+            setTextColor(Color.parseColor("#666666"))
+            textSize = 11f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#E0E0E0"), 6f)
+            background = createPressableDrawable(
+                Color.parseColor("#E0E0E0"),
+                Color.parseColor("#D0D0D0"),
+                6f
+            )
             layoutParams = LinearLayout.LayoutParams(0, dpToPx(36), 1f)
-        })
+        }
+        setupTouchButton(deleteBtn) { deleteEntry(entry) }
+        buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
         
@@ -518,7 +575,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun onConnectClick() {
-        showToast("Connect tapped!")
         if (isConnected) {
             showToast("Connected to: $selectedSpaceName")
         } else {
@@ -532,7 +588,6 @@ class FloatingWindowService : Service() {
     }
     
     private fun pasteFromClipboard() {
-        showToast("Paste tapped!")
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip
         if (clip != null && clip.itemCount > 0) {
