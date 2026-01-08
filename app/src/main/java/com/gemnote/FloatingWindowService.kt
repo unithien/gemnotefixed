@@ -22,6 +22,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -77,8 +78,8 @@ class FloatingWindowService : Service() {
     
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
-    private var connectBtn: TextView? = null
-    private var typeBtn: TextView? = null
+    private var connectBtn: Button? = null
+    private var typeBtn: Button? = null
     
     private var initialX = 0
     private var initialY = 0
@@ -169,74 +170,10 @@ class FloatingWindowService : Service() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
 
-    // Create a button with touch handling that works in overlay
-    private fun createButton(
-        text: String,
-        textColor: Int,
-        bgColor: Int,
-        textSize: Float = 12f,
-        width: Int = LinearLayout.LayoutParams.WRAP_CONTENT,
-        height: Int = dpToPx(44),
-        radius: Float = 8f,
-        onClick: () -> Unit
-    ): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(textColor)
-            this.textSize = textSize
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(bgColor, radius)
-            layoutParams = LinearLayout.LayoutParams(width, height)
-            
-            // Use touch listener for overlay compatibility
-            setOnTouchListener(createTouchListener(onClick))
-        }
-    }
-    
-    // Touch listener that handles tap detection
-    private fun createTouchListener(onClick: () -> Unit): View.OnTouchListener {
-        return object : View.OnTouchListener {
-            private var startX = 0f
-            private var startY = 0f
-            private var startTime = 0L
-            
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startX = event.x
-                        startY = event.y
-                        startTime = System.currentTimeMillis()
-                        v.alpha = 0.7f
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        v.alpha = 1.0f
-                        val dx = Math.abs(event.x - startX)
-                        val dy = Math.abs(event.y - startY)
-                        val dt = System.currentTimeMillis() - startTime
-                        
-                        // Tap detection: small movement and short duration
-                        if (dx < dpToPx(15) && dy < dpToPx(15) && dt < 300) {
-                            onClick()
-                        }
-                        return true
-                    }
-                    MotionEvent.ACTION_CANCEL -> {
-                        v.alpha = 1.0f
-                        return true
-                    }
-                }
-                return false
-            }
-        }
-    }
-
     private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
-        val gray = Color.parseColor("#E0E0E0")
         
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -262,9 +199,14 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        // Close button
-        val closeBtn = createButton("✕", white, purple, 20f, dpToPx(50), dpToPx(40), 0f) {
-            closeFloatingWindow()
+        // Close button using Button widget
+        val closeBtn = Button(this).apply {
+            text = "✕"
+            setTextColor(white)
+            textSize = 16f
+            setBackgroundColor(Color.TRANSPARENT)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(50), dpToPx(40))
+            setOnClickListener { closeFloatingWindow() }
         }
         header.addView(closeBtn)
         
@@ -294,28 +236,48 @@ class FloatingWindowService : Service() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
         }
         
         // PASTE button
-        val pasteBtn = createButton("+", purple, Color.parseColor("#E8E0F0"), 26f, dpToPx(48), dpToPx(48), 50f) {
-            pasteFromClipboard()
+        val pasteBtn = Button(this).apply {
+            text = "+"
+            setTextColor(purple)
+            textSize = 22f
+            setTypeface(null, Typeface.BOLD)
+            background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
+            setOnClickListener { pasteFromClipboard() }
         }
         bottomBar.addView(pasteBtn)
         
         // CONNECT button
-        connectBtn = createButton("CONNECT", white, purple, 12f, dpToPx(95), dpToPx(44), 8f) {
-            onConnectClick()
-        }.apply {
-            (layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
+        connectBtn = Button(this).apply {
+            text = "CONNECT"
+            setTextColor(white)
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            isAllCaps = false
+            background = createRoundedDrawable(purple, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(90), dpToPx(44)).apply {
+                marginStart = dpToPx(8)
+            }
+            setOnClickListener { onConnectClick() }
         }
         bottomBar.addView(connectBtn)
         
         // TYPE button  
-        typeBtn = createButton(selectedTypeName.uppercase(), white, purple, 12f, dpToPx(95), dpToPx(44), 8f) {
-            showToast("Type: $selectedTypeName")
-        }.apply {
-            (layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
+        typeBtn = Button(this).apply {
+            text = selectedTypeName.uppercase()
+            setTextColor(white)
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            isAllCaps = false
+            background = createRoundedDrawable(purple, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(90), dpToPx(44)).apply {
+                marginStart = dpToPx(8)
+            }
+            setOnClickListener { showToast("Type: $selectedTypeName") }
         }
         bottomBar.addView(typeBtn)
         
@@ -345,12 +307,12 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        // NO FLAGS - allows full touch interaction
+        // No flags for full touch
         layoutParams = WindowManager.LayoutParams(
             dpToPx(300),
             dpToPx(450),
             layoutFlag,
-            0,  // No flags
+            0,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -527,17 +489,21 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons row
+        // Buttons row using Button widgets
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         
         // Send button
-        val sendBtn = createButton(
-            if (entry.isSynced) "SENT" else "SEND",
-            Color.WHITE, purple, 11f, dpToPx(100), dpToPx(36), 6f
-        ) {
-            sendToAnytype(entry)
+        val sendBtn = Button(this).apply {
+            text = if (entry.isSynced) "SENT" else "SEND"
+            setTextColor(Color.WHITE)
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            isAllCaps = false
+            background = createRoundedDrawable(purple, 6f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
+            setOnClickListener { sendToAnytype(entry) }
         }
         buttonsRow.addView(sendBtn)
         
@@ -547,8 +513,15 @@ class FloatingWindowService : Service() {
         })
         
         // Delete button
-        val deleteBtn = createButton("DELETE", Color.parseColor("#666666"), gray, 11f, dpToPx(100), dpToPx(36), 6f) {
-            deleteEntry(entry)
+        val deleteBtn = Button(this).apply {
+            text = "DELETE"
+            setTextColor(Color.parseColor("#666666"))
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            isAllCaps = false
+            background = createRoundedDrawable(gray, 6f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
+            setOnClickListener { deleteEntry(entry) }
         }
         buttonsRow.addView(deleteBtn)
         
