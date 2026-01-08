@@ -17,7 +17,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -37,14 +36,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
-import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,7 +51,6 @@ import java.util.concurrent.TimeUnit
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        // Port for the proxy (not the same as Anytype's internal port)
         const val PROXY_PORT = 31010
     }
 
@@ -83,7 +80,6 @@ class MainActivity : AppCompatActivity() {
         
         handleShareIntent(intent)
         
-        // Auto-connect on start
         if (getApiKey().isNotEmpty()) {
             autoConnect()
         }
@@ -317,7 +313,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
     
-    // Get local IP subnet
     private fun getLocalSubnet(): String? {
         try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -326,26 +321,23 @@ class MainActivity : AppCompatActivity() {
             
             if (ip == 0) return null
             
-            val ipString = String.format(
+            return String.format(
                 "%d.%d.%d",
                 ip and 0xff,
                 ip shr 8 and 0xff,
                 ip shr 16 and 0xff
             )
-            return ipString
         } catch (e: Exception) {
             return null
         }
     }
     
-    // Auto-connect: try saved URL first, then scan
     private fun autoConnect() {
         val savedUrl = getBaseUrl()
         if (savedUrl.isNotEmpty()) {
             lifecycleScope.launch {
                 val success = tryConnect(savedUrl)
                 if (!success) {
-                    // Saved URL failed, try scanning
                     autoScanNetwork()
                 }
             }
@@ -354,7 +346,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // Scan network for Anytype proxy
     private fun autoScanNetwork() {
         val apiKey = getApiKey()
         if (apiKey.isEmpty()) {
@@ -374,17 +365,14 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             var foundUrl: String? = null
             
-            // Scan IPs 1-254 in parallel batches
             val ips = (1..254).map { "$subnet.$it" }
             
             withContext(Dispatchers.IO) {
-                // Scan in batches of 50 for efficiency
                 ips.chunked(50).forEach { batch ->
                     if (foundUrl != null) return@forEach
                     
                     val results = batch.map { ip ->
                         async {
-                            // Scan for proxy port (31010)
                             val url = "http://$ip:$PROXY_PORT"
                             if (checkAnytypeAt(url, apiKey)) url else null
                         }
@@ -399,15 +387,14 @@ class MainActivity : AppCompatActivity() {
             if (foundUrl != null) {
                 saveBaseUrl(foundUrl!!)
                 connectToAnytype(foundUrl!!)
-                Toast.makeText(this@MainActivity, "Found Anytype at $foundUrl", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Found: $foundUrl", Toast.LENGTH_SHORT).show()
             } else {
                 updateStatus()
-                Toast.makeText(this@MainActivity, "Anytype proxy not found.\nMake sure START_PROXY.bat is running on your PC!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Proxy not found. Run START_PROXY.bat on PC!", Toast.LENGTH_LONG).show()
             }
         }
     }
     
-    // Check if Anytype API is available at URL
     private suspend fun checkAnytypeAt(url: String, apiKey: String): Boolean {
         return try {
             withTimeoutOrNull(2000) {
@@ -420,7 +407,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // Try to connect to specific URL
     private suspend fun tryConnect(url: String): Boolean {
         return try {
             val api = createApi(url, getApiKey())
@@ -504,8 +490,9 @@ class MainActivity : AppCompatActivity() {
                 val api = createApi(getBaseUrl(), getApiKey())
                 val request = CreateObjectRequest(
                     name = title,
-                    objectTypeUniqueKey = "ot-note",
-                    description = entry.content
+                    typeKey = "note",
+                    body = entry.content,
+                    icon = ObjectIcon(emoji = "📝", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) { 
                     api.createObject(selectedSpaceId, request) 
@@ -517,21 +504,11 @@ class MainActivity : AppCompatActivity() {
                     updateUI()
                     Toast.makeText(this@MainActivity, "Sent: $title", Toast.LENGTH_SHORT).show()
                 } else {
-                    // Connection might have changed, try to reconnect
                     val errorBody = response.errorBody()?.string() ?: ""
-                    if (response.code() in listOf(401, 403, 404)) {
-                        isConnected = false
-                        updateStatus()
-                        Toast.makeText(this@MainActivity, "Connection lost. Please reconnect.", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
-                    }
+                    Toast.makeText(this@MainActivity, "Failed ${response.code()}: $errorBody", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
-                // Network error - try to rescan
-                isConnected = false
-                updateStatus()
-                Toast.makeText(this@MainActivity, "Network error. Tap Connect to rescan.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -614,13 +591,17 @@ data class ClipEntry(
 data class Space(val id: String, val name: String)
 data class ApiResponse<T>(val data: T?)
 
+data class ObjectIcon(
+    val emoji: String,
+    val format: String
+)
+
 data class CreateObjectRequest(
     val name: String,
-    @SerializedName("object_type_unique_key")
-    val objectTypeUniqueKey: String,
-    val description: String? = null,
+    @SerializedName("type_key")
+    val typeKey: String,
     val body: String? = null,
-    val icon: String? = null
+    val icon: ObjectIcon? = null
 )
 
 interface AnytypeApi {
