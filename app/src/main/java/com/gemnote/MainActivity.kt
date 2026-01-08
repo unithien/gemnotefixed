@@ -243,9 +243,13 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startFloatingWindow() {
-        // Start floating window service
+        // Start floating window service as foreground service
         val intent = Intent(this, FloatingWindowService::class.java)
-        startService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
         
         // Minimize app to background
         moveTaskToBack(true)

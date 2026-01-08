@@ -1,6 +1,9 @@
 package com.gemnote
 
-import android.app.AlertDialog
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipboardManager
 import android.content.Context
@@ -21,7 +24,7 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
-import androidx.cardview.widget.CardView
+import androidx.core.app.NotificationCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -53,6 +56,8 @@ class FloatingWindowService : Service() {
 
     companion object {
         const val PROXY_PORT = 31010
+        const val CHANNEL_ID = "floating_channel"
+        const val NOTIFICATION_ID = 1001
         
         val EXCLUDED_TYPE_KEYS = setOf(
             "audio", "video", "file", "image", 
@@ -112,6 +117,10 @@ class FloatingWindowService : Service() {
     override fun onCreate() {
         super.onCreate()
         
+        // Start as foreground service immediately
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createNotification())
+        
         prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         
@@ -123,6 +132,38 @@ class FloatingWindowService : Service() {
         if (getApiKey().isNotEmpty()) {
             autoConnect()
         }
+    }
+    
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "GemNote Floating",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Floating window mode"
+                setShowBadge(false)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+    
+    private fun createNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("GemNote")
+            .setContentText("Floating mode active")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
     }
     
     private fun loadSettings() {
@@ -574,7 +615,8 @@ class FloatingWindowService : Service() {
             serviceScope.launch {
                 val success = tryConnect(savedUrl)
                 if (!success && getApiKey().isNotEmpty()) {
-                    autoScanNetwork()
+                    // Don't auto-scan, just update status
+                    updateStatus()
                 }
             }
         }
