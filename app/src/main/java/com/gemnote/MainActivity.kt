@@ -4,8 +4,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -16,6 +19,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -44,6 +48,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
+        const val OVERLAY_PERMISSION_CODE = 1001
     }
 
     private lateinit var prefs: SharedPreferences
@@ -61,6 +66,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var entriesContainer: LinearLayout
+    private lateinit var floatingSwitch: SwitchMaterial
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +91,13 @@ class MainActivity : AppCompatActivity() {
         handleShareIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        loadEntries()
+        updateUI()
+        updateFloatingSwitch()
+    }
+
     private fun handleShareIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
@@ -96,10 +109,61 @@ class MainActivity : AppCompatActivity() {
     private fun setupViews() {
         statusText = findViewById(R.id.statusText)
         entriesContainer = findViewById(R.id.entriesContainer)
+        floatingSwitch = findViewById(R.id.floatingSwitch)
 
         findViewById<Button>(R.id.btnPaste).setOnClickListener { pasteFromClipboard() }
         findViewById<Button>(R.id.btnConnect).setOnClickListener { onConnectClick() }
         findViewById<Button>(R.id.btnType).setOnClickListener { showTypeSelector() }
+
+        floatingSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                startFloatingService()
+            } else {
+                stopFloatingService()
+            }
+        }
+
+        updateFloatingSwitch()
+    }
+
+    private fun updateFloatingSwitch() {
+        val isRunning = FloatingBubbleService.isRunning
+        floatingSwitch.isChecked = isRunning
+    }
+
+    private fun startFloatingService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            floatingSwitch.isChecked = false
+            AlertDialog.Builder(this)
+                .setTitle("Permission Required")
+                .setMessage("Please enable 'Display over other apps' permission for floating mode.")
+                .setPositiveButton("Open Settings") { _, _ ->
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivityForResult(intent, OVERLAY_PERMISSION_CODE)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+
+        startService(Intent(this, FloatingBubbleService::class.java))
+    }
+
+    private fun stopFloatingService() {
+        stopService(Intent(this, FloatingBubbleService::class.java))
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OVERLAY_PERMISSION_CODE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                startFloatingService()
+                floatingSwitch.isChecked = true
+            }
+        }
     }
 
     private fun loadSettings() {
@@ -452,12 +516,6 @@ class MainActivity : AppCompatActivity() {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(AnytypeApi::class.java)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        loadEntries()
-        updateUI()
     }
 
     override fun onDestroy() {
