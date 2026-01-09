@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.gemnote"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -41,7 +41,4 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    
-    // EasyFloat - reliable floating window library
-    implementation("com.github.princekin-f:EasyFloat:2.0.4")
 }

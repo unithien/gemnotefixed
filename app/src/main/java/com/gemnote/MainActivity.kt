@@ -4,14 +4,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Person
-import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.content.pm.ShortcutInfo
-import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -116,17 +112,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "GemNote Bubble",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Floating bubble for quick access"
-                setAllowBubbles(true)
-            }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "GemNote Bubble",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Floating bubble for quick access"
+            setAllowBubbles(true)
         }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun createBubbleShortcut() {
@@ -173,7 +167,7 @@ class MainActivity : AppCompatActivity() {
             .setImportant(true)
             .build()
 
-        val bubbleMetadata = NotificationCompat.BubbleMetadata.Builder(
+        val bubbleData = NotificationCompat.BubbleMetadata.Builder(
             bubbleIntent,
             IconCompat.createWithResource(this, android.R.drawable.ic_dialog_info)
         )
@@ -189,18 +183,15 @@ class MainActivity : AppCompatActivity() {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setShortcutId(SHORTCUT_ID)
             .addPerson(person)
-            .setBubbleMetadata(bubbleMetadata)
+            .setBubbleMetadata(bubbleData)
             .build()
 
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(BUBBLE_NOTIFICATION_ID, notification)
-
+        getSystemService(NotificationManager::class.java).notify(BUBBLE_NOTIFICATION_ID, notification)
         moveTaskToBack(true)
     }
 
     private fun hideBubble() {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.cancel(BUBBLE_NOTIFICATION_ID)
+        getSystemService(NotificationManager::class.java).cancel(BUBBLE_NOTIFICATION_ID)
     }
 
     private fun loadSettings() {
