@@ -1,20 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="#F5F0FF">
 
-    <!-- Top status bar with floating toggle -->
     <LinearLayout
-        android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="12dp"
-        android:background="#6B4EAA"
-        app:layout_constraintTop_toTopOf="parent">
+        android:padding="16dp"
+        android:background="#6B4EAA">
 
         <TextView
             android:id="@+id/statusText"
@@ -22,93 +19,61 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Not connected"
-            android:textSize="14sp"
-            android:textColor="#FFFFFF"/>
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
 
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/floatingToggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:thumbTint="#FFFFFF"
-            app:trackTint="#D8D0F0"/>
     </LinearLayout>
 
-    <!-- Content area with RecyclerView anchored to bottom -->
-    <FrameLayout
-        android:id="@+id/contentArea"
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/topBar"
-        app:layout_constraintBottom_toTopOf="@id/bottomBar">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:padding="8dp"
-            android:clipToPadding="false"/>
-
-        <TextView
-            android:id="@+id/emptyView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:text="No entries yet.\n\nCopy text or tap the + button!"
-            android:textSize="16sp"
-            android:textColor="#888888"
-            android:visibility="visible"/>
-    </FrameLayout>
-
-    <!-- Bottom bar with FAB on LEFT, then Connect, then Type -->
-    <LinearLayout
-        android:id="@+id/bottomBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="16dp"
-        android:background="#FFFFFF"
-        android:elevation="0dp"
-        app:layout_constraintBottom_toBottomOf="parent">
+        android:layout_weight="1">
 
         <LinearLayout
+            android:id="@+id/entriesContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="vertical"
+            android:padding="16dp" />
 
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fabPaste"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:src="@android:drawable/ic_input_add"
-                app:fabSize="normal"
-                app:elevation="0dp"
-                app:backgroundTint="#D8D0F0"
-                app:tint="#6B4EAA"/>
+    </ScrollView>
 
-            <Button
-                android:id="@+id/btnConnect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="6dp"
-                android:text="Connect"
-                android:backgroundTint="#6B4EAA"
-                android:textColor="#FFFFFF"/>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#FFFFFF">
 
-            <Button
-                android:id="@+id/btnService"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:text="Type: Note"
-                android:backgroundTint="#6B4EAA"
-                android:textColor="#FFFFFF"/>
-        </LinearLayout>
+        <Button
+            android:id="@+id/btnPaste"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
+            android:text="+"
+            android:textSize="24sp"
+            android:textColor="#6B4EAA"
+            android:background="@drawable/btn_action" />
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="Connect"
+            android:textColor="#FFFFFF"
+            android:background="@drawable/btn_send" />
+
+        <Button
+            android:id="@+id/btnType"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="Type: Note"
+            android:textColor="#6B4EAA"
+            android:background="@drawable/btn_action" />
+
     </LinearLayout>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>

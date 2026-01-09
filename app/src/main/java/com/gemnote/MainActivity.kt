@@ -1,9 +1,5 @@
 package com.gemnote
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Person
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -16,15 +12,10 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.NotificationCompat
-import androidx.core.content.pm.ShortcutInfoCompat
-import androidx.core.content.pm.ShortcutManagerCompat
-import androidx.core.graphics.drawable.IconCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -53,9 +44,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
-        const val CHANNEL_ID = "gemnote_bubble"
-        const val BUBBLE_NOTIFICATION_ID = 2001
-        const val SHORTCUT_ID = "gemnote_bubble_shortcut"
     }
 
     private lateinit var prefs: SharedPreferences
@@ -73,7 +61,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var entriesContainer: LinearLayout
-    private lateinit var floatingSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,9 +69,6 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
         loadSettings()
         loadEntries()
-
-        createNotificationChannel()
-        createBubbleShortcut()
 
         setupViews()
         updateUI()
@@ -109,87 +93,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "GemNote Bubble",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Floating bubble for quick access"
-            setAllowBubbles(true)
-        }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
-
-    private fun createBubbleShortcut() {
-        val shortcut = ShortcutInfoCompat.Builder(this, SHORTCUT_ID)
-            .setShortLabel("GemNote")
-            .setLongLabel("GemNote Bubble")
-            .setIcon(IconCompat.createWithResource(this, android.R.drawable.ic_dialog_info))
-            .setIntent(Intent(this, BubbleActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-            })
-            .setLongLived(true)
-            .build()
-
-        ShortcutManagerCompat.pushDynamicShortcut(this, shortcut)
-    }
-
     private fun setupViews() {
         statusText = findViewById(R.id.statusText)
         entriesContainer = findViewById(R.id.entriesContainer)
-        floatingSwitch = findViewById(R.id.floatingSwitch)
 
         findViewById<Button>(R.id.btnPaste).setOnClickListener { pasteFromClipboard() }
         findViewById<Button>(R.id.btnConnect).setOnClickListener { onConnectClick() }
         findViewById<Button>(R.id.btnType).setOnClickListener { showTypeSelector() }
-
-        floatingSwitch.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                showBubble()
-            } else {
-                hideBubble()
-            }
-        }
-    }
-
-    private fun showBubble() {
-        val target = Intent(this, BubbleActivity::class.java)
-        val bubbleIntent = PendingIntent.getActivity(
-            this, 0, target,
-            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val person = Person.Builder()
-            .setName("GemNote")
-            .setImportant(true)
-            .build()
-
-        val bubbleData = NotificationCompat.BubbleMetadata.Builder(
-            bubbleIntent,
-            IconCompat.createWithResource(this, android.R.drawable.ic_dialog_info)
-        )
-            .setDesiredHeight(500)
-            .setAutoExpandBubble(true)
-            .setSuppressNotification(true)
-            .build()
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("GemNote")
-            .setContentText("Tap to open")
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setShortcutId(SHORTCUT_ID)
-            .addPerson(person)
-            .setBubbleMetadata(bubbleData)
-            .build()
-
-        getSystemService(NotificationManager::class.java).notify(BUBBLE_NOTIFICATION_ID, notification)
-        moveTaskToBack(true)
-    }
-
-    private fun hideBubble() {
-        getSystemService(NotificationManager::class.java).cancel(BUBBLE_NOTIFICATION_ID)
     }
 
     private fun loadSettings() {
@@ -215,8 +125,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         statusText.text = when {
-            isConnected && selectedSpaceName.isNotEmpty() -> "OK $selectedSpaceName"
-            isConnected -> "OK Connected"
+            isConnected && selectedSpaceName.isNotEmpty() -> "Connected: $selectedSpaceName"
+            isConnected -> "Connected"
             else -> "Not connected"
         }
 
@@ -504,8 +414,7 @@ class MainActivity : AppCompatActivity() {
                 val request = CreateObjectRequest(
                     name = title,
                     typeKey = selectedTypeKey,
-                    body = body,
-                    icon = ObjectIcon(emoji = "N", format = "emoji")
+                    body = body
                 )
                 val response = withContext(Dispatchers.IO) {
                     createApi(getBaseUrl(), getApiKey()).createObject(selectedSpaceId, request)
@@ -557,18 +466,24 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+data class ClipEntry(
+    val id: Long,
+    val content: String,
+    val preview: String,
+    val timestamp: Long,
+    var isSynced: Boolean = false
+)
+
 data class Space(val id: String, val name: String)
 data class ObjectType(
     @SerializedName("unique_key") val key: String,
     val name: String
 )
 data class ApiResponse<T>(val data: T?)
-data class ObjectIcon(val emoji: String? = null, val format: String? = null)
 data class CreateObjectRequest(
     val name: String,
     @SerializedName("type_key") val typeKey: String,
-    val body: String? = null,
-    val icon: ObjectIcon? = null
+    val body: String? = null
 )
 
 interface AnytypeApi {

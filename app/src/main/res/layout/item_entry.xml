@@ -24,7 +24,7 @@
             android:id="@+id/syncedText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="✓ Synced"
+            android:text="Synced"
             android:textColor="#4CAF50"
             android:textSize="12sp"
             android:visibility="gone" />
@@ -54,7 +54,6 @@
             android:text="SEND"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
-            android:textStyle="bold"
             android:background="@drawable/btn_send" />
 
         <Button
@@ -65,7 +64,6 @@
             android:text="DELETE"
             android:textColor="#6B4EAA"
             android:textSize="13sp"
-            android:textStyle="bold"
             android:background="@drawable/btn_action" />
 
     </LinearLayout>
