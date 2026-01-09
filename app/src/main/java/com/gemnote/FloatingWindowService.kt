@@ -172,6 +172,7 @@ class FloatingWindowService : Service() {
     private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
         val lightPurple = Color.parseColor("#F5F0FF")
+        val btnBg = Color.parseColor("#E8E0F0") // Same as + button
         val white = Color.WHITE
         
         val rootLayout = LinearLayout(this).apply {
@@ -231,7 +232,7 @@ class FloatingWindowService : Service() {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // ===== BOTTOM BAR - swap order: CONNECT first, then +, then TYPE =====
+        // ===== BOTTOM BAR - All buttons same style as + =====
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(white)
@@ -239,15 +240,31 @@ class FloatingWindowService : Service() {
             setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
         }
         
-        // CONNECT button FIRST (testing if position matters)
-        val connectBtn = TextView(this).apply {
-            text = "CONNECT"
-            setTextColor(white)
-            textSize = 12f
+        // All 3 buttons: same 48x48 size, same light background, same purple text
+        val pasteBtn = TextView(this).apply {
+            text = "+"
+            setTextColor(purple)
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 8f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44))
+            background = createRoundedDrawable(btnBg, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { pasteFromClipboard() }
+        }
+        bottomBar.addView(pasteBtn)
+        
+        val connectBtn = TextView(this).apply {
+            text = "C"  // Single character like +
+            setTextColor(purple)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createRoundedDrawable(btnBg, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
+                marginStart = dpToPx(8)
+            }
             isClickable = true
             isFocusable = true
             setOnClickListener { onConnectClick() }
@@ -255,32 +272,14 @@ class FloatingWindowService : Service() {
         connectText = connectBtn
         bottomBar.addView(connectBtn)
         
-        // PASTE button SECOND
-        val pasteBtn = TextView(this).apply {
-            text = "+"
-            setTextColor(purple)
-            textSize = 26f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#E8E0F0"), 50f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
-                marginStart = dpToPx(8)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { pasteFromClipboard() }
-        }
-        bottomBar.addView(pasteBtn)
-        
-        // TYPE button THIRD
         val typeBtn = TextView(this).apply {
-            text = selectedTypeName.uppercase()
-            setTextColor(white)
-            textSize = 12f
+            text = "T"  // Single character like +
+            setTextColor(purple)
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 8f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(95), dpToPx(44)).apply {
+            background = createRoundedDrawable(btnBg, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
                 marginStart = dpToPx(8)
             }
             isClickable = true
@@ -416,18 +415,14 @@ class FloatingWindowService : Service() {
         when {
             isConnected && selectedSpaceName.isNotEmpty() -> {
                 statusText?.text = "V $selectedSpaceName"
-                connectText?.text = "SPACE"
             }
             isConnected -> {
                 statusText?.text = "V Connected"
-                connectText?.text = "SPACE"
             }
             else -> {
                 statusText?.text = "GemNote"
-                connectText?.text = "CONNECT"
             }
         }
-        typeText?.text = selectedTypeName.uppercase()
     }
     
     private fun updateEntriesUI() {
@@ -452,7 +447,7 @@ class FloatingWindowService : Service() {
     
     private fun createEntryCard(entry: ClipEntry): View {
         val purple = Color.parseColor("#6B4EAA")
-        val gray = Color.parseColor("#E0E0E0")
+        val btnBg = Color.parseColor("#E8E0F0")
         
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -497,42 +492,42 @@ class FloatingWindowService : Service() {
             setPadding(0, dpToPx(6), 0, dpToPx(8))
         })
         
-        // Buttons row - SWAP ORDER: DELETE first, SEND second
+        // Buttons row - both same style as + button
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         
-        // Delete button FIRST (testing if position matters)
-        val deleteBtn = TextView(this).apply {
-            text = "DELETE"
-            setTextColor(Color.parseColor("#666666"))
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(gray, 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { deleteEntry(entry) }
-        }
-        buttonsRow.addView(deleteBtn)
-        
-        // Send button SECOND
+        // Send button - same style as +
         val sendBtn = TextView(this).apply {
-            text = if (entry.isSynced) "SENT" else "SEND"
-            setTextColor(Color.WHITE)
-            textSize = 11f
+            text = "S"
+            setTextColor(purple)
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = createRoundedDrawable(purple, 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(100), dpToPx(36)).apply {
-                marginStart = dpToPx(8)
-            }
+            background = createRoundedDrawable(btnBg, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
             isClickable = true
             isFocusable = true
             setOnClickListener { sendToAnytype(entry) }
         }
         buttonsRow.addView(sendBtn)
+        
+        // Delete button - same style as +
+        val deleteBtn = TextView(this).apply {
+            text = "D"
+            setTextColor(purple)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createRoundedDrawable(btnBg, 8f)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
+                marginStart = dpToPx(8)
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { deleteEntry(entry) }
+        }
+        buttonsRow.addView(deleteBtn)
         
         card.addView(buttonsRow)
         
