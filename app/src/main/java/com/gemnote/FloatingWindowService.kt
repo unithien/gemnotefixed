@@ -9,28 +9,25 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Color
-import android.graphics.PixelFormat
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
-import android.view.MotionEvent
+import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
+import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
+import com.lzf.easyfloat.EasyFloat
+import com.lzf.easyfloat.enums.ShowPattern
+import com.lzf.easyfloat.enums.SidePattern
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,10 +55,9 @@ class FloatingWindowService : Service() {
         const val PROXY_PORT = 31010
         const val CHANNEL_ID = "floating_channel"
         const val NOTIFICATION_ID = 1001
+        const val FLOAT_TAG = "gemnote_float"
     }
 
-    private var windowManager: WindowManager? = null
-    private var floatingView: View? = null
     private lateinit var prefs: SharedPreferences
     
     private val entries = mutableListOf<ClipEntry>()
@@ -78,13 +74,6 @@ class FloatingWindowService : Service() {
     
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
-    
-    private var initialX = 0
-    private var initialY = 0
-    private var initialTouchX = 0f
-    private var initialTouchY = 0f
-
-    private var layoutParams: WindowManager.LayoutParams? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -96,7 +85,6 @@ class FloatingWindowService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
             
             prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
-            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             
             loadSettings()
             loadEntries()
@@ -169,218 +157,42 @@ class FloatingWindowService : Service() {
     }
 
     private fun createFloatingWindow() {
-        val purple = Color.parseColor("#6B4EAA")
-        val lightPurple = Color.parseColor("#F5F0FF")
-        val btnBg = Color.parseColor("#E8E0F0")
-        val white = Color.WHITE
-        
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = createRoundedDrawable(white, 16f)
-            elevation = 12f
-        }
-        
-        // ===== HEADER with buttons =====
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(purple)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(12), dpToPx(8), dpToPx(8), dpToPx(8))
-        }
-        
-        statusText = TextView(this).apply {
-            text = "GemNote"
-            setTextColor(white)
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        header.addView(statusText)
-        
-        // Add +, C, T buttons in header (where we know clicks work)
-        val pasteBtn = TextView(this).apply {
-            text = "+"
-            setTextColor(white)
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#8B6ECA"), 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(36))
-            setOnClickListener { pasteFromClipboard() }
-        }
-        header.addView(pasteBtn)
-        
-        val connectBtn = TextView(this).apply {
-            text = "C"
-            setTextColor(white)
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#8B6ECA"), 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(36)).apply {
-                marginStart = dpToPx(6)
+        EasyFloat.with(this)
+            .setTag(FLOAT_TAG)
+            .setLayout(R.layout.float_gemnote) { view ->
+                setupFloatingView(view)
             }
-            setOnClickListener { onConnectClick() }
-        }
-        header.addView(connectBtn)
+            .setShowPattern(ShowPattern.ALL_TIME)
+            .setSidePattern(SidePattern.DEFAULT)
+            .setLocation(80, 150)
+            .setDragEnable(true)
+            .setGravity(Gravity.START or Gravity.TOP)
+            .show()
+    }
+    
+    private fun setupFloatingView(view: View) {
+        statusText = view.findViewById(R.id.statusText)
+        entriesContainer = view.findViewById(R.id.entriesContainer)
         
-        val typeBtn = TextView(this).apply {
-            text = "T"
-            setTextColor(white)
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = createRoundedDrawable(Color.parseColor("#8B6ECA"), 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(36)).apply {
-                marginStart = dpToPx(6)
-            }
-            setOnClickListener { showToast("Type: $selectedTypeName") }
-        }
-        header.addView(typeBtn)
-        
-        val closeBtn = TextView(this).apply {
-            text = "X"
-            setTextColor(white)
-            textSize = 18f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(36)).apply {
-                marginStart = dpToPx(6)
-            }
-            setOnClickListener { closeFloatingWindow() }
-        }
-        header.addView(closeBtn)
-        
-        rootLayout.addView(header, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        
-        // ===== CONTENT - Simple LinearLayout, NO ScrollView =====
-        entriesContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(lightPurple)
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+        // Button click listeners
+        view.findViewById<Button>(R.id.btnPaste).setOnClickListener {
+            pasteFromClipboard()
         }
         
-        rootLayout.addView(entriesContainer, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
-        
-        // ===== RESIZE HANDLE =====
-        val resizeHandle = TextView(this).apply {
-            text = "="
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#9080C0"))
-            setBackgroundColor(Color.parseColor("#E8E0F0"))
-        }
-        rootLayout.addView(resizeHandle, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(24)
-        ))
-        
-        floatingView = rootLayout
-        
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
+        view.findViewById<Button>(R.id.btnConnect).setOnClickListener {
+            onConnectClick()
         }
         
-        layoutParams = WindowManager.LayoutParams(
-            dpToPx(300),
-            dpToPx(400),
-            layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 80
-            y = 150
+        view.findViewById<Button>(R.id.btnType).setOnClickListener {
+            showToast("Type: $selectedTypeName")
         }
         
-        windowManager?.addView(floatingView, layoutParams)
-        
-        setupDrag(header)
-        setupResize(resizeHandle)
+        view.findViewById<Button>(R.id.btnClose).setOnClickListener {
+            closeFloatingWindow()
+        }
         
         updateEntriesUI()
         updateStatus()
-    }
-    
-    private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dpToPx(radius.toInt()).toFloat()
-        }
-    }
-    
-    private fun dpToPx(dp: Int): Int {
-        return (dp * resources.displayMetrics.density).toInt()
-    }
-    
-    private fun setupDrag(dragView: View) {
-        var isDragging = false
-        
-        dragView.setOnTouchListener { _, event ->
-            val params = layoutParams ?: return@setOnTouchListener false
-            val wm = windowManager ?: return@setOnTouchListener false
-            val view = floatingView ?: return@setOnTouchListener false
-            
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    isDragging = false
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                        isDragging = true
-                    }
-                    if (isDragging) {
-                        params.x = initialX + dx.toInt()
-                        params.y = initialY + dy.toInt()
-                        wm.updateViewLayout(view, params)
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-    }
-    
-    private fun setupResize(resizeView: View) {
-        resizeView.setOnTouchListener { _, event ->
-            val params = layoutParams ?: return@setOnTouchListener false
-            val wm = windowManager ?: return@setOnTouchListener false
-            val view = floatingView ?: return@setOnTouchListener false
-            
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val deltaX = (event.rawX - initialTouchX).toInt()
-                    val deltaY = (event.rawY - initialTouchY).toInt()
-                    
-                    params.width = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
-                    params.height = (params.height + deltaY).coerceIn(dpToPx(300), dpToPx(600))
-                    wm.updateViewLayout(view, params)
-                    
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                else -> false
-            }
-        }
     }
     
     private fun updateStatus() {
@@ -402,97 +214,37 @@ class FloatingWindowService : Service() {
         container.removeAllViews()
         
         if (entries.isEmpty()) {
-            container.addView(TextView(this).apply {
+            val emptyText = TextView(this).apply {
                 text = "No entries yet\n\nCopy text, then tap + to paste"
-                setTextColor(Color.parseColor("#888888"))
+                setTextColor(0xFF888888.toInt())
                 textSize = 14f
                 gravity = Gravity.CENTER
-                setPadding(dpToPx(16), dpToPx(40), dpToPx(16), dpToPx(40))
-            })
+                setPadding(32, 80, 32, 80)
+            }
+            container.addView(emptyText)
             return
         }
         
-        val purple = Color.parseColor("#6B4EAA")
-        val btnBg = Color.parseColor("#E8E0F0")
+        val inflater = LayoutInflater.from(this)
         
-        // Show only first 5 entries to avoid scrolling issues
-        for (entry in entries.take(5)) {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                background = createRoundedDrawable(Color.WHITE, 8f)
-                setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8))
-                elevation = 2f
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dpToPx(6) }
+        for (entry in entries) {
+            val cardView = inflater.inflate(R.layout.float_entry_card, container, false)
+            
+            cardView.findViewById<TextView>(R.id.previewText).text = entry.preview
+            cardView.findViewById<TextView>(R.id.timestampText).text = dateFormat.format(Date(entry.timestamp))
+            
+            val syncedIcon = cardView.findViewById<TextView>(R.id.syncedIcon)
+            syncedIcon.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
+            
+            cardView.findViewById<Button>(R.id.btnSend).setOnClickListener {
+                sendToAnytype(entry)
             }
             
-            // Preview text
-            val previewText = TextView(this).apply {
-                text = entry.preview.take(40) + if (entry.preview.length > 40) "..." else ""
-                setTextColor(Color.parseColor("#333333"))
-                textSize = 12f
-                maxLines = 1
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            card.addView(previewText)
-            
-            // Synced indicator
-            if (entry.isSynced) {
-                val syncIcon = TextView(this).apply {
-                    text = "✓"
-                    setTextColor(Color.parseColor("#4CAF50"))
-                    textSize = 14f
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { marginEnd = dpToPx(6) }
-                }
-                card.addView(syncIcon)
+            cardView.findViewById<Button>(R.id.btnDelete).setOnClickListener {
+                deleteEntry(entry)
             }
             
-            // Send button
-            val sendBtn = TextView(this).apply {
-                text = "S"
-                setTextColor(purple)
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-                background = createRoundedDrawable(btnBg, 6f)
-                layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(32))
-                setOnClickListener { sendToAnytype(entry) }
-            }
-            card.addView(sendBtn)
-            
-            // Delete button
-            val deleteBtn = TextView(this).apply {
-                text = "D"
-                setTextColor(purple)
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-                gravity = Gravity.CENTER
-                background = createRoundedDrawable(btnBg, 6f)
-                layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(32)).apply {
-                    marginStart = dpToPx(4)
-                }
-                setOnClickListener { deleteEntry(entry) }
-            }
-            card.addView(deleteBtn)
-            
-            container.addView(card)
-        }
-        
-        // Show count if more entries
-        if (entries.size > 5) {
-            container.addView(TextView(this).apply {
-                text = "+ ${entries.size - 5} more entries"
-                setTextColor(Color.parseColor("#999999"))
-                textSize = 11f
-                gravity = Gravity.CENTER
-                setPadding(0, dpToPx(4), 0, 0)
-            })
+            container.addView(cardView)
         }
     }
     
@@ -554,6 +306,7 @@ class FloatingWindowService : Service() {
     }
     
     private fun closeFloatingWindow() {
+        EasyFloat.dismiss(FLOAT_TAG)
         sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
         stopSelf()
     }
@@ -707,9 +460,7 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        floatingView?.let { 
-            try { windowManager?.removeView(it) } catch (e: Exception) {}
-        }
+        EasyFloat.dismiss(FLOAT_TAG)
     }
 }
 
