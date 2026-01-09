@@ -79,7 +79,7 @@ class FloatingBubbleService : Service() {
     private var types = listOf<FloatObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
-    private var selectedTypeKey = "note"
+    private var selectedTypeKey = "ot-note"
     private var selectedTypeName = "Note"
     private var isConnected = false
     private var isMinimized = false
@@ -145,7 +145,7 @@ class FloatingBubbleService : Service() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
-        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
+        selectedTypeKey = prefs.getString("type_key", "ot-note") ?: "ot-note"
         selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
     }
 
@@ -868,7 +868,7 @@ data class FloatObjectType(
 data class FloatApiResponse<T>(val data: T?)
 data class FloatCreateObjectRequest(
     val name: String,
-    @SerializedName("type_key") val typeKey: String,
+    @SerializedName("object_type_unique_key") val typeKey: String,
     val body: String? = null
 )
 
