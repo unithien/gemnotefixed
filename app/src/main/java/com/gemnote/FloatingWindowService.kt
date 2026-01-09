@@ -62,8 +62,6 @@ class FloatingWindowService : Service() {
     }
 
     private var windowManager: WindowManager? = null
-    private var mainWindow: View? = null
-    private var bottomBarWindow: View? = null
     private lateinit var prefs: SharedPreferences
     
     private val entries = mutableListOf<ClipEntry>()
@@ -78,21 +76,24 @@ class FloatingWindowService : Service() {
     private var selectedTypeName = "Note"
     private var isConnected = false
     
+    // Individual windows for each button
+    private var mainContentWindow: View? = null
+    private var btnAddWindow: View? = null
+    private var btnConnectWindow: View? = null
+    private var btnTypeWindow: View? = null
+    
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
+    
+    private var windowX = 80
+    private var windowY = 150
+    private val windowWidth = 300
+    private val windowHeight = 450
     
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
-    
-    private var windowX = 80
-    private var windowY = 150
-    private var windowWidth = 300
-    private var windowHeight = 450
-
-    private var mainParams: WindowManager.LayoutParams? = null
-    private var bottomParams: WindowManager.LayoutParams? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -110,7 +111,7 @@ class FloatingWindowService : Service() {
             loadEntries()
             
             handler.postDelayed({
-                createWindows()
+                createAllWindows()
                 if (getApiKey().isNotEmpty()) {
                     autoConnect()
                 }
@@ -175,21 +176,73 @@ class FloatingWindowService : Service() {
     private fun saveEntries() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
-
-    private fun createWindows() {
-        val purple = Color.parseColor("#6B4EAA")
-        val lightPurple = Color.parseColor("#F5F0FF")
-        val btnBg = Color.parseColor("#E8E0F0")
-        val white = Color.WHITE
-        
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    
+    private fun getLayoutFlag(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
+    }
+    
+    private fun createButtonWindow(text: String, xOffset: Int, action: () -> Unit): View {
+        val purple = Color.parseColor("#6B4EAA")
+        val btnBg = Color.parseColor("#E8E0F0")
         
-        // ===== MAIN WINDOW (Header + Content + Resize) =====
+        val btn = TextView(this).apply {
+            this.text = text
+            setTextColor(purple)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createRoundedDrawable(btnBg, 8f)
+            isClickable = true
+            isFocusable = true
+        }
+        
+        // Use touch listener for more reliable click detection
+        btn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.alpha = 0.7f
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.alpha = 1f
+                    action()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 1f
+                    true
+                }
+                else -> false
+            }
+        }
+        
+        val params = WindowManager.LayoutParams(
+            dpToPx(56),
+            dpToPx(48),
+            getLayoutFlag(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = windowX + dpToPx(8 + xOffset)
+            y = windowY + dpToPx(windowHeight - 78)
+        }
+        
+        windowManager?.addView(btn, params)
+        return btn
+    }
+    
+    private fun createAllWindows() {
+        val purple = Color.parseColor("#6B4EAA")
+        val lightPurple = Color.parseColor("#F5F0FF")
+        val white = Color.WHITE
+        
+        // ===== MAIN CONTENT WINDOW =====
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = createRoundedDrawable(white, 16f)
@@ -213,8 +266,15 @@ class FloatingWindowService : Service() {
         }
         header.addView(statusText)
         
-        val closeBtn = createButton("X", white, Color.TRANSPARENT, 50, 40)
-        closeBtn.setOnClickListener { closeFloatingWindow() }
+        val closeBtn = TextView(this).apply {
+            text = "X"
+            setTextColor(white)
+            textSize = 18f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dpToPx(50), dpToPx(40))
+            isClickable = true
+            setOnClickListener { closeFloatingWindow() }
+        }
         header.addView(closeBtn)
         
         mainLayout.addView(header, LinearLayout.LayoutParams(
@@ -238,11 +298,11 @@ class FloatingWindowService : Service() {
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
         
-        // Space for bottom bar (will be separate window)
-        val bottomSpacer = View(this).apply {
+        // Bottom bar background (buttons will be separate windows)
+        val bottomBar = View(this).apply {
             setBackgroundColor(white)
         }
-        mainLayout.addView(bottomSpacer, LinearLayout.LayoutParams(
+        mainLayout.addView(bottomBar, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(68)
         ))
         
@@ -258,12 +318,12 @@ class FloatingWindowService : Service() {
             ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(20)
         ))
         
-        mainWindow = mainLayout
+        mainContentWindow = mainLayout
         
-        mainParams = WindowManager.LayoutParams(
+        val mainParams = WindowManager.LayoutParams(
             dpToPx(windowWidth),
             dpToPx(windowHeight),
-            layoutFlag,
+            getLayoutFlag(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -272,67 +332,18 @@ class FloatingWindowService : Service() {
             y = windowY
         }
         
-        windowManager?.addView(mainWindow, mainParams)
+        windowManager?.addView(mainContentWindow, mainParams)
         
-        setupDrag(header)
-        setupResize(resizeHandle)
+        setupDrag(header, mainParams)
+        setupResize(resizeHandle, mainParams)
         
-        // ===== BOTTOM BAR WINDOW (Separate for reliable touch) =====
-        val bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(white)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
-        }
-        
-        val pasteBtn = createButton("+", purple, btnBg, 56, 48)
-        pasteBtn.setOnClickListener { pasteFromClipboard() }
-        bottomBar.addView(pasteBtn)
-        
-        val connectBtn = createButton("C", purple, btnBg, 56, 48)
-        (connectBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
-        connectBtn.setOnClickListener { onConnectClick() }
-        bottomBar.addView(connectBtn)
-        
-        val typeBtn = createButton("T", purple, btnBg, 56, 48)
-        (typeBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
-        typeBtn.setOnClickListener { showToast("Type: $selectedTypeName") }
-        bottomBar.addView(typeBtn)
-        
-        bottomBarWindow = bottomBar
-        
-        bottomParams = WindowManager.LayoutParams(
-            dpToPx(windowWidth),
-            dpToPx(68),
-            layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = windowX
-            y = windowY + dpToPx(windowHeight) - dpToPx(88) // Position over the spacer
-        }
-        
-        windowManager?.addView(bottomBarWindow, bottomParams)
+        // ===== CREATE INDIVIDUAL BUTTON WINDOWS =====
+        btnAddWindow = createButtonWindow("+", 0) { pasteFromClipboard() }
+        btnConnectWindow = createButtonWindow("C", 64) { onConnectClick() }
+        btnTypeWindow = createButtonWindow("T", 128) { showToast("Type: $selectedTypeName") }
         
         updateEntriesUI()
         updateStatus()
-    }
-    
-    private fun createButton(text: String, textColor: Int, bgColor: Int, widthDp: Int, heightDp: Int): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(textColor)
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            if (bgColor != Color.TRANSPARENT) {
-                background = createRoundedDrawable(bgColor, 8f)
-            }
-            layoutParams = LinearLayout.LayoutParams(dpToPx(widthDp), dpToPx(heightDp))
-            isClickable = true
-            isFocusable = true
-        }
     }
     
     private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
@@ -346,29 +357,30 @@ class FloatingWindowService : Service() {
         return (dp * resources.displayMetrics.density).toInt()
     }
     
-    private fun updateWindowPositions() {
+    private fun updateAllButtonPositions() {
         val wm = windowManager ?: return
         
-        mainParams?.let { params ->
-            params.x = windowX
-            params.y = windowY
-            params.width = dpToPx(windowWidth)
-            params.height = dpToPx(windowHeight)
-            mainWindow?.let { wm.updateViewLayout(it, params) }
-        }
-        
-        bottomParams?.let { params ->
-            params.x = windowX
-            params.y = windowY + dpToPx(windowHeight) - dpToPx(88)
-            params.width = dpToPx(windowWidth)
-            bottomBarWindow?.let { wm.updateViewLayout(it, params) }
+        listOf(
+            btnAddWindow to 0,
+            btnConnectWindow to 64,
+            btnTypeWindow to 128
+        ).forEach { (view, xOffset) ->
+            view?.let {
+                val params = it.layoutParams as WindowManager.LayoutParams
+                params.x = windowX + dpToPx(8 + xOffset)
+                params.y = windowY + dpToPx(windowHeight - 78)
+                wm.updateViewLayout(it, params)
+            }
         }
     }
     
-    private fun setupDrag(dragView: View) {
+    private fun setupDrag(dragView: View, params: WindowManager.LayoutParams) {
         var isDragging = false
         
         dragView.setOnTouchListener { _, event ->
+            val wm = windowManager ?: return@setOnTouchListener false
+            val view = mainContentWindow ?: return@setOnTouchListener false
+            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     isDragging = false
@@ -387,7 +399,10 @@ class FloatingWindowService : Service() {
                     if (isDragging) {
                         windowX = initialX + dx.toInt()
                         windowY = initialY + dy.toInt()
-                        updateWindowPositions()
+                        params.x = windowX
+                        params.y = windowY
+                        wm.updateViewLayout(view, params)
+                        updateAllButtonPositions()
                     }
                     true
                 }
@@ -396,8 +411,11 @@ class FloatingWindowService : Service() {
         }
     }
     
-    private fun setupResize(resizeView: View) {
+    private fun setupResize(resizeView: View, params: WindowManager.LayoutParams) {
         resizeView.setOnTouchListener { _, event ->
+            val wm = windowManager ?: return@setOnTouchListener false
+            val view = mainContentWindow ?: return@setOnTouchListener false
+            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialTouchX = event.rawX
@@ -408,10 +426,12 @@ class FloatingWindowService : Service() {
                     val deltaX = (event.rawX - initialTouchX).toInt()
                     val deltaY = (event.rawY - initialTouchY).toInt()
                     
-                    windowWidth = ((windowWidth * resources.displayMetrics.density + deltaX) / resources.displayMetrics.density).toInt().coerceIn(250, 450)
-                    windowHeight = ((windowHeight * resources.displayMetrics.density + deltaY) / resources.displayMetrics.density).toInt().coerceIn(350, 650)
+                    params.width = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
+                    params.height = (params.height + deltaY).coerceIn(dpToPx(350), dpToPx(650))
+                    wm.updateViewLayout(view, params)
                     
-                    updateWindowPositions()
+                    // Update button positions based on new height
+                    updateAllButtonPositions()
                     
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
@@ -503,13 +523,46 @@ class FloatingWindowService : Service() {
                 orientation = LinearLayout.HORIZONTAL
             }
             
-            val sendBtn = createButton("S", purple, btnBg, 56, 44)
-            sendBtn.setOnClickListener { sendToAnytype(entry) }
+            val sendBtn = TextView(this).apply {
+                text = "S"
+                setTextColor(purple)
+                textSize = 18f
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                background = createRoundedDrawable(btnBg, 8f)
+                layoutParams = LinearLayout.LayoutParams(dpToPx(56), dpToPx(44))
+                isClickable = true
+            }
+            sendBtn.setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> { v.alpha = 0.7f; true }
+                    MotionEvent.ACTION_UP -> { v.alpha = 1f; sendToAnytype(entry); true }
+                    MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                    else -> false
+                }
+            }
             buttonsRow.addView(sendBtn)
             
-            val deleteBtn = createButton("D", purple, btnBg, 56, 44)
-            (deleteBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
-            deleteBtn.setOnClickListener { deleteEntry(entry) }
+            val deleteBtn = TextView(this).apply {
+                text = "D"
+                setTextColor(purple)
+                textSize = 18f
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                background = createRoundedDrawable(btnBg, 8f)
+                layoutParams = LinearLayout.LayoutParams(dpToPx(56), dpToPx(44)).apply {
+                    marginStart = dpToPx(8)
+                }
+                isClickable = true
+            }
+            deleteBtn.setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> { v.alpha = 0.7f; true }
+                    MotionEvent.ACTION_UP -> { v.alpha = 1f; deleteEntry(entry); true }
+                    MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                    else -> false
+                }
+            }
             buttonsRow.addView(deleteBtn)
             
             card.addView(buttonsRow)
@@ -729,11 +782,11 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        mainWindow?.let { 
-            try { windowManager?.removeView(it) } catch (e: Exception) {}
-        }
-        bottomBarWindow?.let { 
-            try { windowManager?.removeView(it) } catch (e: Exception) {}
+        
+        listOf(mainContentWindow, btnAddWindow, btnConnectWindow, btnTypeWindow).forEach { view ->
+            view?.let { 
+                try { windowManager?.removeView(it) } catch (e: Exception) {}
+            }
         }
     }
 }
