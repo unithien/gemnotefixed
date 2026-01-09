@@ -70,13 +70,13 @@ class FloatingBubbleService : Service() {
     private var bubbleParams: WindowManager.LayoutParams? = null
     private lateinit var prefs: SharedPreferences
 
-    private val entries = mutableListOf&lt;ClipEntry&gt;()
+    private val entries = mutableListOf<ClipEntry>()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val handler = Handler(Looper.getMainLooper())
     private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
 
-    private var spaces = listOf&lt;FloatSpace&gt;()
-    private var types = listOf&lt;FloatObjectType&gt;()
+    private var spaces = listOf<FloatSpace>()
+    private var types = listOf<FloatObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var selectedTypeKey = "note"
@@ -154,7 +154,7 @@ class FloatingBubbleService : Service() {
 
     private fun loadEntries() {
         val json = prefs.getString("entries", "[]")
-        val type = object : TypeToken&lt;MutableList&lt;ClipEntry&gt;&gt;() {}.type
+        val type = object : TypeToken<MutableList<ClipEntry>>() {}.type
         entries.clear()
         entries.addAll(Gson().fromJson(json, type) ?: mutableListOf())
     }
@@ -556,7 +556,7 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun showSelectionPopup(title: String, items: List&lt;String&gt;, onSelect: (Int) -> Unit) {
+    private fun showSelectionPopup(title: String, items: List<String>, onSelect: (Int) -> Unit) {
         // Create a popup window for selection
         val popupLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -865,7 +865,7 @@ data class FloatObjectType(
     @SerializedName("unique_key") val key: String,
     val name: String
 )
-data class FloatApiResponse&lt;T&gt;(val data: T?)
+data class FloatApiResponse<T>(val data: T?)
 data class FloatCreateObjectRequest(
     val name: String,
     @SerializedName("type_key") val typeKey: String,
@@ -874,11 +874,11 @@ data class FloatCreateObjectRequest(
 
 interface FloatAnytypeApi {
     @GET("v1/spaces")
-    suspend fun getSpaces(): retrofit2.Response&lt;FloatApiResponse&lt;List&lt;FloatSpace&gt;&gt;&gt;
+    suspend fun getSpaces(): retrofit2.Response<FloatApiResponse<List<FloatSpace>>>
 
     @GET("v1/spaces/{spaceId}/types")
-    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response&lt;FloatApiResponse&lt;List&lt;FloatObjectType&gt;&gt;&gt;
+    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response<FloatApiResponse<List<FloatObjectType>>>
 
     @POST("v1/spaces/{spaceId}/objects")
-    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatCreateObjectRequest): retrofit2.Response&lt;Any&gt;
+    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatCreateObjectRequest): retrofit2.Response<Any>
 }
