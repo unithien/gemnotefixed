@@ -51,8 +51,8 @@
             android:layout_height="48dp"
             android:text="+"
             android:textSize="24sp"
-            android:textColor="#6B4EAA"
-            android:background="@drawable/btn_action" />
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#6B4EAA" />
 
         <Button
             android:id="@+id/btnConnect"
@@ -62,7 +62,7 @@
             android:layout_marginStart="8dp"
             android:text="Connect"
             android:textColor="#FFFFFF"
-            android:background="@drawable/btn_send" />
+            android:backgroundTint="#6B4EAA" />
 
         <Button
             android:id="@+id/btnType"
@@ -71,8 +71,8 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:text="Type: Note"
-            android:textColor="#6B4EAA"
-            android:background="@drawable/btn_action" />
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#8B6ECA" />
 
     </LinearLayout>
 

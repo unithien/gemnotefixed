@@ -49,22 +49,22 @@
 
         <Button
             android:id="@+id/btnSend"
-            android:layout_width="90dp"
-            android:layout_height="40dp"
+            android:layout_width="100dp"
+            android:layout_height="44dp"
             android:text="SEND"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
-            android:background="@drawable/btn_send" />
+            android:backgroundTint="#6B4EAA" />
 
         <Button
             android:id="@+id/btnDelete"
-            android:layout_width="90dp"
-            android:layout_height="40dp"
+            android:layout_width="100dp"
+            android:layout_height="44dp"
             android:layout_marginStart="10dp"
             android:text="DELETE"
-            android:textColor="#6B4EAA"
+            android:textColor="#FFFFFF"
             android:textSize="13sp"
-            android:background="@drawable/btn_action" />
+            android:backgroundTint="#E57373" />
 
     </LinearLayout>
 
