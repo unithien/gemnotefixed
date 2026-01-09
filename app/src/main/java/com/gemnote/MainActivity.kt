@@ -8,9 +8,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.drawable.Icon
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -217,8 +215,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         statusText.text = when {
-            isConnected && selectedSpaceName.isNotEmpty() -> "✓ $selectedSpaceName"
-            isConnected -> "✓ Connected"
+            isConnected && selectedSpaceName.isNotEmpty() -> "OK $selectedSpaceName"
+            isConnected -> "OK Connected"
             else -> "Not connected"
         }
 
@@ -384,8 +382,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // ========== Network ==========
-
     private fun getLocalSubnet(): String? {
         return try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -487,9 +483,7 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     types = response.body()?.data ?: emptyList()
                 }
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (e: Exception) { }
         }
     }
 
@@ -511,7 +505,7 @@ class MainActivity : AppCompatActivity() {
                     name = title,
                     typeKey = selectedTypeKey,
                     body = body,
-                    icon = ObjectIcon(emoji = "📝", format = "emoji")
+                    icon = ObjectIcon(emoji = "N", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) {
                     createApi(getBaseUrl(), getApiKey()).createObject(selectedSpaceId, request)
@@ -562,15 +556,6 @@ class MainActivity : AppCompatActivity() {
         activityScope.cancel()
     }
 }
-
-// Data classes
-data class ClipEntry(
-    val id: Long,
-    val content: String,
-    val preview: String,
-    val timestamp: Long,
-    var isSynced: Boolean = false
-)
 
 data class Space(val id: String, val name: String)
 data class ObjectType(

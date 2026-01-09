@@ -69,7 +69,6 @@ class BubbleActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         entriesContainer = findViewById(R.id.entriesContainer)
 
-        // Setup button clicks
         findViewById<Button>(R.id.btnPaste).setOnClickListener {
             pasteFromClipboard()
         }
@@ -121,8 +120,8 @@ class BubbleActivity : AppCompatActivity() {
 
     private fun updateUI() {
         statusText.text = when {
-            isConnected && selectedSpaceName.isNotEmpty() -> "✓ $selectedSpaceName"
-            isConnected -> "✓ Connected"
+            isConnected && selectedSpaceName.isNotEmpty() -> "OK $selectedSpaceName"
+            isConnected -> "OK Connected"
             else -> "GemNote"
         }
 
@@ -130,7 +129,7 @@ class BubbleActivity : AppCompatActivity() {
 
         if (entries.isEmpty()) {
             val emptyText = TextView(this).apply {
-                text = "No entries\n\nTap + to paste from clipboard"
+                text = "No entries - Tap + to paste"
                 setTextColor(0xFF888888.toInt())
                 textSize = 14f
                 gravity = Gravity.CENTER
@@ -197,7 +196,6 @@ class BubbleActivity : AppCompatActivity() {
         }
     }
 
-    // Network methods
     private fun getLocalSubnet(): String? {
         return try {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
