@@ -79,7 +79,7 @@ class FloatingBubbleService : Service() {
     private var types = listOf<FloatObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
-    private var selectedTypeKey = "note"
+    private var selectedTypeKey = "ot-note"
     private var selectedTypeName = "Note"
     private var isConnected = false
     private var isMinimized = false
@@ -145,7 +145,7 @@ class FloatingBubbleService : Service() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
-        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
+        selectedTypeKey = prefs.getString("type_key", "ot-note") ?: "ot-note"
         selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
     }
 
@@ -372,7 +372,8 @@ class FloatingBubbleService : Service() {
         params?.x = bubbleParams?.x ?: 50
         params?.y = bubbleParams?.y ?: 150
         windowManager?.updateViewLayout(floatingView, params)
-        // Refresh entries
+        // Refresh entries and settings
+        loadSettings()
         loadEntries()
         updateEntriesUI()
     }
@@ -796,6 +797,9 @@ class FloatingBubbleService : Service() {
             return
         }
 
+        // Reload settings to get latest type selection
+        loadSettings()
+        
         showToast("Sending...")
 
         val lines = entry.content.lines()
@@ -819,10 +823,10 @@ class FloatingBubbleService : Service() {
                     handler.post { updateEntriesUI() }
                     showToast("Sent!")
                 } else {
-                    showToast("Failed")
+                    showToast("Failed: ${response.code()}")
                 }
             } catch (e: Exception) {
-                showToast("Error")
+                showToast("Error: ${e.message}")
             }
         }
     }
@@ -868,7 +872,7 @@ data class FloatObjectType(
 data class FloatApiResponse<T>(val data: T?)
 data class FloatCreateObjectRequest(
     val name: String,
-    @SerializedName("type_key") val typeKey: String,
+    @SerializedName("object_type_unique_key") val typeKey: String,
     val body: String? = null
 )
 

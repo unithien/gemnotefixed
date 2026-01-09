@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var types = listOf<ObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
-    private var selectedTypeKey = "note"
+    private var selectedTypeKey = "ot-note"
     private var selectedTypeName = "Note"
     private var isConnected = false
 
@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
-        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
+        selectedTypeKey = prefs.getString("type_key", "ot-note") ?: "ot-note"
         selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
     }
 
@@ -542,7 +542,7 @@ data class ObjectType(
 data class ApiResponse<T>(val data: T?)
 data class CreateObjectRequest(
     val name: String,
-    @SerializedName("type_key") val typeKey: String,
+    @SerializedName("object_type_unique_key") val typeKey: String,
     val body: String? = null
 )
 
