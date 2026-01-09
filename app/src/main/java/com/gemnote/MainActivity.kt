@@ -542,7 +542,7 @@ data class ObjectType(
 data class ApiResponse<T>(val data: T?)
 data class CreateObjectRequest(
     val name: String,
-    @SerializedName("object_type_unique_key") val typeKey: String,
+    @SerializedName("type_key") val typeKey: String,
     val body: String? = null
 )
 
