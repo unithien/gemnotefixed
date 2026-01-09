@@ -1,3 +1,2 @@
 package com.gemnote
-
-// Placeholder - not used
+// Unused
