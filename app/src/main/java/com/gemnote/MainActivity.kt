@@ -1,16 +1,21 @@
 package com.gemnote
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Person
 import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.net.Uri
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -22,6 +27,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -50,6 +59,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
+        const val CHANNEL_ID = "gemnote_bubble"
+        const val BUBBLE_NOTIFICATION_ID = 2001
+        const val SHORTCUT_ID = "gemnote_bubble_shortcut"
     }
 
     private lateinit var prefs: SharedPreferences
@@ -64,18 +76,10 @@ class MainActivity : AppCompatActivity() {
     private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
-    private var floatingActive = false
 
     private lateinit var statusText: TextView
     private lateinit var entriesContainer: LinearLayout
     private lateinit var floatingSwitch: Switch
-
-    private val floatingClosedReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            floatingActive = false
-            floatingSwitch.isChecked = false
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,14 +89,11 @@ class MainActivity : AppCompatActivity() {
         loadSettings()
         loadEntries()
 
+        createNotificationChannel()
+        createBubbleShortcut()
+
         setupViews()
         updateUI()
-
-        registerReceiver(
-            floatingClosedReceiver,
-            IntentFilter("com.gemnote.FLOATING_CLOSED"),
-            RECEIVER_NOT_EXPORTED
-        )
 
         handleShareIntent(intent)
 
@@ -114,6 +115,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "GemNote Bubble",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Floating bubble for quick access"
+                setAllowBubbles(true)
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    private fun createBubbleShortcut() {
+        val shortcut = ShortcutInfoCompat.Builder(this, SHORTCUT_ID)
+            .setShortLabel("GemNote")
+            .setLongLabel("GemNote Bubble")
+            .setIcon(IconCompat.createWithResource(this, android.R.drawable.ic_dialog_info))
+            .setIntent(Intent(this, BubbleActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+            })
+            .setLongLived(true)
+            .build()
+
+        ShortcutManagerCompat.pushDynamicShortcut(this, shortcut)
+    }
+
     private fun setupViews() {
         statusText = findViewById(R.id.statusText)
         entriesContainer = findViewById(R.id.entriesContainer)
@@ -125,39 +154,53 @@ class MainActivity : AppCompatActivity() {
 
         floatingSwitch.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
-                startFloatingWindow()
+                showBubble()
             } else {
-                stopFloatingWindow()
+                hideBubble()
             }
         }
     }
 
-    private fun startFloatingWindow() {
-        if (!Settings.canDrawOverlays(this)) {
-            floatingSwitch.isChecked = false
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
-            Toast.makeText(this, "Please grant overlay permission", Toast.LENGTH_LONG).show()
-            return
-        }
+    private fun showBubble() {
+        val target = Intent(this, BubbleActivity::class.java)
+        val bubbleIntent = PendingIntent.getActivity(
+            this, 0, target,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
-        floatingActive = true
-        
-        // Start FloatingActivity instead of Service
-        val intent = Intent(this, FloatingActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        
-        // Minimize main app
+        val person = Person.Builder()
+            .setName("GemNote")
+            .setImportant(true)
+            .build()
+
+        val bubbleMetadata = NotificationCompat.BubbleMetadata.Builder(
+            bubbleIntent,
+            IconCompat.createWithResource(this, android.R.drawable.ic_dialog_info)
+        )
+            .setDesiredHeight(500)
+            .setAutoExpandBubble(true)
+            .setSuppressNotification(true)
+            .build()
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("GemNote")
+            .setContentText("Tap to open")
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setShortcutId(SHORTCUT_ID)
+            .addPerson(person)
+            .setBubbleMetadata(bubbleMetadata)
+            .build()
+
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(BUBBLE_NOTIFICATION_ID, notification)
+
         moveTaskToBack(true)
     }
 
-    private fun stopFloatingWindow() {
-        floatingActive = false
-        sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
+    private fun hideBubble() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.cancel(BUBBLE_NOTIFICATION_ID)
     }
 
     private fun loadSettings() {
@@ -526,7 +569,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         activityScope.cancel()
-        unregisterReceiver(floatingClosedReceiver)
     }
 }
 
