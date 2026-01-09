@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var types = listOf<ObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
-    private var selectedTypeKey = "ot-note"
+    private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
 
@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
-        selectedTypeKey = prefs.getString("type_key", "ot-note") ?: "ot-note"
+        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
         selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
     }
 

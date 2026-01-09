@@ -79,7 +79,7 @@ class FloatingBubbleService : Service() {
     private var types = listOf<FloatObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
-    private var selectedTypeKey = "ot-note"
+    private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
     private var isMinimized = false
@@ -145,7 +145,7 @@ class FloatingBubbleService : Service() {
     private fun loadSettings() {
         selectedSpaceId = prefs.getString("space_id", "") ?: ""
         selectedSpaceName = prefs.getString("space_name", "") ?: ""
-        selectedTypeKey = prefs.getString("type_key", "ot-note") ?: "ot-note"
+        selectedTypeKey = prefs.getString("type_key", "note") ?: "note"
         selectedTypeName = prefs.getString("type_name", "Note") ?: "Note"
     }
 
@@ -372,8 +372,7 @@ class FloatingBubbleService : Service() {
         params?.x = bubbleParams?.x ?: 50
         params?.y = bubbleParams?.y ?: 150
         windowManager?.updateViewLayout(floatingView, params)
-        // Refresh entries and settings
-        loadSettings()
+        // Refresh entries
         loadEntries()
         updateEntriesUI()
     }
@@ -797,9 +796,6 @@ class FloatingBubbleService : Service() {
             return
         }
 
-        // Reload settings to get latest type selection
-        loadSettings()
-        
         showToast("Sending...")
 
         val lines = entry.content.lines()
@@ -823,10 +819,10 @@ class FloatingBubbleService : Service() {
                     handler.post { updateEntriesUI() }
                     showToast("Sent!")
                 } else {
-                    showToast("Failed: ${response.code()}")
+                    showToast("Failed")
                 }
             } catch (e: Exception) {
-                showToast("Error: ${e.message}")
+                showToast("Error")
             }
         }
     }
