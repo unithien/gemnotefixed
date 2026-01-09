@@ -150,6 +150,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         startService(Intent(this, FloatingBubbleService::class.java))
+        // Minimize app when floating is enabled
+        moveTaskToBack(true)
     }
 
     private fun stopFloatingService() {

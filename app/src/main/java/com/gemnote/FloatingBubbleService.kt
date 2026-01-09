@@ -23,10 +23,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -63,7 +65,9 @@ class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
+    private var bubbleView: View? = null
     private var params: WindowManager.LayoutParams? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
     private lateinit var prefs: SharedPreferences
 
     private val entries = mutableListOf<ClipEntry>()
@@ -72,11 +76,13 @@ class FloatingBubbleService : Service() {
     private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
 
     private var spaces = listOf<FloatSpace>()
+    private var types = listOf<FloatObjectType>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
+    private var isMinimized = false
 
     private var statusText: TextView? = null
     private var entriesContainer: LinearLayout? = null
@@ -100,7 +106,9 @@ class FloatingBubbleService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
         
         handler.postDelayed({
+            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             createFloatingWindow()
+            createBubble()
             if (getApiKey().isNotEmpty()) {
                 autoConnect()
             }
@@ -166,14 +174,82 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun createFloatingWindow() {
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+    private fun createBubble() {
+        val bubble = ImageView(this).apply {
+            setImageDrawable(createRoundedDrawable(Color.parseColor("#6B4EAA"), 30f))
+        }
 
+        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        bubbleParams = WindowManager.LayoutParams(
+            dpToPx(50),
+            dpToPx(50),
+            layoutFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 50
+            y = 300
+        }
+
+        bubbleView = bubble
+        windowManager?.addView(bubbleView, bubbleParams)
+        bubbleView?.visibility = View.GONE
+
+        setupBubbleTouch()
+    }
+
+    private fun setupBubbleTouch() {
+        var isDragging = false
+        var clickStartTime = 0L
+
+        bubbleView?.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    isDragging = false
+                    clickStartTime = System.currentTimeMillis()
+                    initialX = bubbleParams?.x ?: 0
+                    initialY = bubbleParams?.y ?: 0
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
+                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                        isDragging = true
+                    }
+                    if (isDragging) {
+                        bubbleParams?.x = initialX + dx.toInt()
+                        bubbleParams?.y = initialY + dy.toInt()
+                        windowManager?.updateViewLayout(bubbleView, bubbleParams)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val clickDuration = System.currentTimeMillis() - clickStartTime
+                    if (!isDragging && clickDuration < 200) {
+                        expandFromBubble()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun createFloatingWindow() {
         val purple = Color.parseColor("#6B4EAA")
         val lightPurple = Color.parseColor("#F5F0FF")
         val white = Color.WHITE
 
-        // Root layout
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = createRoundedDrawable(white, 16f)
@@ -197,17 +273,21 @@ class FloatingBubbleService : Service() {
         }
         header.addView(statusText)
 
-        // Header buttons
+        // Header buttons: +, C, T, -, X
         val btnPaste = createHeaderButton("+") { pasteFromClipboard() }
         header.addView(btnPaste)
 
-        val btnConnect = createHeaderButton("C") { onConnectClick() }
+        val btnConnect = createHeaderButton("C") { showSpaceSelector() }
         (btnConnect.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(4)
         header.addView(btnConnect)
 
-        val btnType = createHeaderButton("T") { showToast("Type: $selectedTypeName") }
+        val btnType = createHeaderButton("T") { showTypeSelector() }
         (btnType.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(4)
         header.addView(btnType)
+
+        val btnMinimize = createHeaderButton("-") { minimizeToBubble() }
+        (btnMinimize.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(4)
+        header.addView(btnMinimize)
 
         val btnClose = createHeaderButton("X") { stopSelf() }
         (btnClose.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(4)
@@ -269,9 +349,32 @@ class FloatingBubbleService : Service() {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = createRoundedDrawable(Color.parseColor("#8B6ECA"), 6f)
-            layoutParams = LinearLayout.LayoutParams(dpToPx(36), dpToPx(32))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(32), dpToPx(32))
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun minimizeToBubble() {
+        isMinimized = true
+        floatingView?.visibility = View.GONE
+        bubbleView?.visibility = View.VISIBLE
+        // Position bubble where floating window was
+        bubbleParams?.x = params?.x ?: 50
+        bubbleParams?.y = params?.y ?: 150
+        windowManager?.updateViewLayout(bubbleView, bubbleParams)
+    }
+
+    private fun expandFromBubble() {
+        isMinimized = false
+        bubbleView?.visibility = View.GONE
+        floatingView?.visibility = View.VISIBLE
+        // Position floating window where bubble was
+        params?.x = bubbleParams?.x ?: 50
+        params?.y = bubbleParams?.y ?: 150
+        windowManager?.updateViewLayout(floatingView, params)
+        // Refresh entries
+        loadEntries()
+        updateEntriesUI()
     }
 
     private fun setupDrag(dragView: View) {
@@ -340,7 +443,6 @@ class FloatingBubbleService : Service() {
                 ).apply { bottomMargin = dpToPx(6) }
             }
 
-            // Top row: timestamp + synced
             val topRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
             }
@@ -359,7 +461,6 @@ class FloatingBubbleService : Service() {
             }
             card.addView(topRow)
 
-            // Preview text
             card.addView(TextView(this).apply {
                 text = entry.preview.take(60) + if (entry.preview.length > 60) "..." else ""
                 setTextColor(Color.parseColor("#333333"))
@@ -368,7 +469,6 @@ class FloatingBubbleService : Service() {
                 setPadding(0, dpToPx(4), 0, dpToPx(6))
             })
 
-            // Buttons row
             val btnRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
             }
@@ -410,17 +510,127 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun onConnectClick() {
-        if (isConnected) {
-            showToast("Connected: $selectedSpaceName")
-        } else {
+    private fun showSpaceSelector() {
+        if (spaces.isEmpty()) {
             if (getApiKey().isNotEmpty()) {
                 showToast("Scanning...")
                 autoScanNetwork()
             } else {
                 showToast("Set API key in main app")
             }
+            return
         }
+
+        // Show popup menu for space selection
+        val names = spaces.map { it.name }
+        showSelectionPopup("Select Space", names) { index ->
+            val space = spaces[index]
+            selectedSpaceId = space.id
+            selectedSpaceName = space.name
+            prefs.edit()
+                .putString("space_id", selectedSpaceId)
+                .putString("space_name", selectedSpaceName)
+                .apply()
+            loadTypesForSpace()
+            updateStatus()
+            showToast("Space: $selectedSpaceName")
+        }
+    }
+
+    private fun showTypeSelector() {
+        if (types.isEmpty()) {
+            showToast("Connect first")
+            return
+        }
+
+        val names = types.map { it.name }
+        showSelectionPopup("Select Type", names) { index ->
+            val type = types[index]
+            selectedTypeKey = type.key
+            selectedTypeName = type.name
+            prefs.edit()
+                .putString("type_key", selectedTypeKey)
+                .putString("type_name", selectedTypeName)
+                .apply()
+            showToast("Type: $selectedTypeName")
+        }
+    }
+
+    private fun showSelectionPopup(title: String, items: List<String>, onSelect: (Int) -> Unit) {
+        // Create a popup window for selection
+        val popupLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = createRoundedDrawable(Color.WHITE, 12f)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+            elevation = 20f
+        }
+
+        // Title
+        popupLayout.addView(TextView(this).apply {
+            text = title
+            setTextColor(Color.parseColor("#6B4EAA"))
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(8))
+        })
+
+        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val popupParams = WindowManager.LayoutParams(
+            dpToPx(200),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (params?.x ?: 50) + dpToPx(40)
+            y = (params?.y ?: 150) + dpToPx(50)
+        }
+
+        windowManager?.addView(popupLayout, popupParams)
+
+        // Add items
+        items.forEachIndexed { index, name ->
+            popupLayout.addView(TextView(this).apply {
+                text = name
+                setTextColor(Color.parseColor("#333333"))
+                textSize = 13f
+                setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+                background = createRoundedDrawable(Color.parseColor("#F5F0FF"), 6f)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dpToPx(4) }
+                setOnClickListener {
+                    windowManager?.removeView(popupLayout)
+                    onSelect(index)
+                }
+            })
+        }
+
+        // Close button
+        popupLayout.addView(TextView(this).apply {
+            text = "Cancel"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = createRoundedDrawable(Color.parseColor("#999999"), 6f)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dpToPx(8) }
+            setOnClickListener {
+                windowManager?.removeView(popupLayout)
+            }
+        })
     }
 
     private fun pasteFromClipboard() {
@@ -547,9 +757,25 @@ class FloatingBubbleService : Service() {
                         .putString("space_name", selectedSpaceName)
                         .apply()
                 }
+                loadTypesForSpace()
                 true
             } else false
         } catch (e: Exception) { false }
+    }
+
+    private fun loadTypesForSpace() {
+        if (selectedSpaceId.isEmpty()) return
+
+        serviceScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    createApi(getBaseUrl(), getApiKey()).getTypes(selectedSpaceId)
+                }
+                if (response.isSuccessful) {
+                    types = response.body()?.data ?: emptyList()
+                }
+            } catch (e: Exception) { }
+        }
     }
 
     private fun sendToAnytype(entry: ClipEntry) {
@@ -616,10 +842,17 @@ class FloatingBubbleService : Service() {
         floatingView?.let {
             try { windowManager?.removeView(it) } catch (e: Exception) { }
         }
+        bubbleView?.let {
+            try { windowManager?.removeView(it) } catch (e: Exception) { }
+        }
     }
 }
 
 data class FloatSpace(val id: String, val name: String)
+data class FloatObjectType(
+    @SerializedName("unique_key") val key: String,
+    val name: String
+)
 data class FloatApiResponse<T>(val data: T?)
 data class FloatCreateObjectRequest(
     val name: String,
@@ -630,6 +863,9 @@ data class FloatCreateObjectRequest(
 interface FloatAnytypeApi {
     @GET("v1/spaces")
     suspend fun getSpaces(): retrofit2.Response<FloatApiResponse<List<FloatSpace>>>
+
+    @GET("v1/spaces/{spaceId}/types")
+    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response<FloatApiResponse<List<FloatObjectType>>>
 
     @POST("v1/spaces/{spaceId}/objects")
     suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatCreateObjectRequest): retrofit2.Response<Any>
