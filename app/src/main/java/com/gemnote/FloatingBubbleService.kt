@@ -70,13 +70,13 @@ class FloatingBubbleService : Service() {
     private var bubbleParams: WindowManager.LayoutParams? = null
     private lateinit var prefs: SharedPreferences
 
-    private val entries = mutableListOf<ClipEntry>()
+    private val entries = mutableListOf&lt;ClipEntry&gt;()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val handler = Handler(Looper.getMainLooper())
     private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
 
-    private var spaces = listOf<FloatSpace>()
-    private var types = listOf<FloatObjectType>()
+    private var spaces = listOf&lt;FloatSpace&gt;()
+    private var types = listOf&lt;FloatObjectType&gt;()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var selectedTypeKey = "note"
@@ -154,7 +154,7 @@ class FloatingBubbleService : Service() {
 
     private fun loadEntries() {
         val json = prefs.getString("entries", "[]")
-        val type = object : TypeToken<MutableList<ClipEntry>>() {}.type
+        val type = object : TypeToken&lt;MutableList&lt;ClipEntry&gt;&gt;() {}.type
         entries.clear()
         entries.addAll(Gson().fromJson(json, type) ?: mutableListOf())
     }
@@ -556,7 +556,7 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun showSelectionPopup(title: String, items: List<String>, onSelect: (Int) -> Unit) {
+    private fun showSelectionPopup(title: String, items: List&lt;String&gt;, onSelect: (Int) -> Unit) {
         // Create a popup window for selection
         val popupLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -634,18 +634,30 @@ class FloatingBubbleService : Service() {
     }
 
     private fun pasteFromClipboard() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = clipboard.primaryClip
-        if (clip != null && clip.itemCount > 0) {
-            val text = clip.getItemAt(0).text?.toString()
-            if (!text.isNullOrBlank()) {
-                addEntry(text)
-            } else {
-                showToast("Empty clipboard")
+        // Temporarily make window focusable to access clipboard (Android 10+ restriction)
+        params?.flags = params?.flags?.and(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()) ?: 0
+        windowManager?.updateViewLayout(floatingView, params)
+        
+        handler.postDelayed({
+            try {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = clipboard.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val text = clip.getItemAt(0).text?.toString()
+                    if (!text.isNullOrBlank()) {
+                        addEntry(text)
+                    } else {
+                        showToast("Empty clipboard")
+                    }
+                } else {
+                    showToast("Empty clipboard")
+                }
+            } finally {
+                // Revert to not focusable
+                params?.flags = params?.flags?.or(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) ?: WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                windowManager?.updateViewLayout(floatingView, params)
             }
-        } else {
-            showToast("Empty clipboard")
-        }
+        }, 100)
     }
 
     private fun addEntry(content: String) {
@@ -853,7 +865,7 @@ data class FloatObjectType(
     @SerializedName("unique_key") val key: String,
     val name: String
 )
-data class FloatApiResponse<T>(val data: T?)
+data class FloatApiResponse&lt;T&gt;(val data: T?)
 data class FloatCreateObjectRequest(
     val name: String,
     @SerializedName("type_key") val typeKey: String,
@@ -862,11 +874,11 @@ data class FloatCreateObjectRequest(
 
 interface FloatAnytypeApi {
     @GET("v1/spaces")
-    suspend fun getSpaces(): retrofit2.Response<FloatApiResponse<List<FloatSpace>>>
+    suspend fun getSpaces(): retrofit2.Response&lt;FloatApiResponse&lt;List&lt;FloatSpace&gt;&gt;&gt;
 
     @GET("v1/spaces/{spaceId}/types")
-    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response<FloatApiResponse<List<FloatObjectType>>>
+    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response&lt;FloatApiResponse&lt;List&lt;FloatObjectType&gt;&gt;&gt;
 
     @POST("v1/spaces/{spaceId}/objects")
-    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatCreateObjectRequest): retrofit2.Response<Any>
+    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FloatCreateObjectRequest): retrofit2.Response&lt;Any&gt;
 }
