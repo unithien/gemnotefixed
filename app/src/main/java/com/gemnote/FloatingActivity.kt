@@ -1,26 +1,21 @@
 package com.gemnote
 
-import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.net.Uri
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -46,7 +41,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class MainActivity : AppCompatActivity() {
+class FloatingActivity : AppCompatActivity() {
 
     companion object {
         const val PROXY_PORT = 31010
@@ -55,31 +50,34 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private val entries = mutableListOf<ClipEntry>()
     private val activityScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val handler = Handler(Looper.getMainLooper())
     private val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
 
-    private var spaces = listOf<Space>()
-    private var types = listOf<ObjectType>()
+    private var spaces = listOf<FSpace>()
     private var selectedSpaceId = ""
     private var selectedSpaceName = ""
     private var selectedTypeKey = "note"
     private var selectedTypeName = "Note"
     private var isConnected = false
-    private var floatingActive = false
 
     private lateinit var statusText: TextView
     private lateinit var entriesContainer: LinearLayout
-    private lateinit var floatingSwitch: Switch
-
-    private val floatingClosedReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            floatingActive = false
-            floatingSwitch.isChecked = false
-        }
-    }
+    private lateinit var countText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContentView(R.layout.activity_floating)
+
+        // Make it floating on top
+        window.apply {
+            setGravity(Gravity.TOP or Gravity.START)
+            val params = attributes
+            params.x = 50
+            params.y = 100
+            attributes = params
+            addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+            addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+        }
 
         prefs = getSharedPreferences("gemnote", Context.MODE_PRIVATE)
         loadSettings()
@@ -88,76 +86,26 @@ class MainActivity : AppCompatActivity() {
         setupViews()
         updateUI()
 
-        registerReceiver(
-            floatingClosedReceiver,
-            IntentFilter("com.gemnote.FLOATING_CLOSED"),
-            RECEIVER_NOT_EXPORTED
-        )
-
-        handleShareIntent(intent)
-
         if (getApiKey().isNotEmpty()) {
             autoConnect()
-        }
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        handleShareIntent(intent)
-    }
-
-    private fun handleShareIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
-                addEntry(text)
-            }
         }
     }
 
     private fun setupViews() {
         statusText = findViewById(R.id.statusText)
         entriesContainer = findViewById(R.id.entriesContainer)
-        floatingSwitch = findViewById(R.id.floatingSwitch)
+        countText = findViewById(R.id.countText)
 
+        // Header buttons
         findViewById<Button>(R.id.btnPaste).setOnClickListener { pasteFromClipboard() }
         findViewById<Button>(R.id.btnConnect).setOnClickListener { onConnectClick() }
-        findViewById<Button>(R.id.btnType).setOnClickListener { showTypeSelector() }
+        findViewById<Button>(R.id.btnType).setOnClickListener { showToast("Type: $selectedTypeName") }
+        findViewById<Button>(R.id.btnClose).setOnClickListener { closeWindow() }
 
-        floatingSwitch.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                startFloatingWindow()
-            } else {
-                stopFloatingWindow()
-            }
-        }
-    }
-
-    private fun startFloatingWindow() {
-        if (!Settings.canDrawOverlays(this)) {
-            floatingSwitch.isChecked = false
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
-            Toast.makeText(this, "Please grant overlay permission", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        floatingActive = true
-        
-        // Start FloatingActivity instead of Service
-        val intent = Intent(this, FloatingActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        
-        // Minimize main app
-        moveTaskToBack(true)
-    }
-
-    private fun stopFloatingWindow() {
-        floatingActive = false
-        sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
+        // Bottom bar buttons
+        findViewById<Button>(R.id.btnPasteBottom).setOnClickListener { pasteFromClipboard() }
+        findViewById<Button>(R.id.btnConnectBottom).setOnClickListener { onConnectClick() }
+        findViewById<Button>(R.id.btnTypeBottom).setOnClickListener { showToast("Type: $selectedTypeName") }
     }
 
     private fun loadSettings() {
@@ -182,23 +130,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
+        // Update status
         statusText.text = when {
             isConnected && selectedSpaceName.isNotEmpty() -> "✓ $selectedSpaceName"
             isConnected -> "✓ Connected"
-            else -> "Not connected"
+            else -> "GemNote"
         }
 
-        findViewById<Button>(R.id.btnType).text = "Type: $selectedTypeName"
+        // Update count
+        countText.text = if (entries.isNotEmpty()) "${entries.size} items" else ""
 
+        // Update entries list
         entriesContainer.removeAllViews()
 
         if (entries.isEmpty()) {
             val emptyText = TextView(this).apply {
-                text = "No entries yet.\n\nCopy text or tap the + button!"
+                text = "No entries yet\n\nCopy text, then tap + to paste"
                 setTextColor(0xFF888888.toInt())
-                textSize = 16f
+                textSize = 14f
                 gravity = Gravity.CENTER
-                setPadding(32, 100, 32, 100)
+                setPadding(32, 80, 32, 80)
             }
             entriesContainer.addView(emptyText)
             return
@@ -207,7 +158,7 @@ class MainActivity : AppCompatActivity() {
         val inflater = LayoutInflater.from(this)
 
         for (entry in entries) {
-            val cardView = inflater.inflate(R.layout.item_entry, entriesContainer, false)
+            val cardView = inflater.inflate(R.layout.item_entry_card, entriesContainer, false)
 
             cardView.findViewById<TextView>(R.id.timestampText).text = dateFormat.format(Date(entry.timestamp))
             cardView.findViewById<TextView>(R.id.previewText).text = entry.preview
@@ -225,6 +176,10 @@ class MainActivity : AppCompatActivity() {
 
             entriesContainer.addView(cardView)
         }
+    }
+
+    private fun showToast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun pasteFromClipboard() {
@@ -271,83 +226,22 @@ class MainActivity : AppCompatActivity() {
         showToast("Deleted")
     }
 
-    private fun showToast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-    }
-
     private fun onConnectClick() {
         if (isConnected) {
-            showSpaceSelector()
+            showToast("Connected to: $selectedSpaceName")
         } else {
-            showApiKeyDialog()
+            if (getApiKey().isNotEmpty()) {
+                showToast("Scanning network...")
+                autoScanNetwork()
+            } else {
+                showToast("Set API key in main app first")
+            }
         }
     }
 
-    private fun showApiKeyDialog() {
-        val input = EditText(this).apply {
-            hint = "Enter API key"
-            setText(getApiKey())
-            setPadding(48, 32, 48, 32)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Anytype API Key")
-            .setMessage("Get your API key from Anytype settings")
-            .setView(input)
-            .setPositiveButton("Connect") { _, _ ->
-                val apiKey = input.text.toString().trim()
-                if (apiKey.isNotEmpty()) {
-                    prefs.edit().putString("api_key", apiKey).apply()
-                    autoScanNetwork(apiKey)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showSpaceSelector() {
-        if (spaces.isEmpty()) {
-            showToast("No spaces available")
-            return
-        }
-
-        val names = spaces.map { it.name }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Select Space")
-            .setItems(names) { _, which ->
-                val space = spaces[which]
-                selectedSpaceId = space.id
-                selectedSpaceName = space.name
-                prefs.edit()
-                    .putString("space_id", selectedSpaceId)
-                    .putString("space_name", selectedSpaceName)
-                    .apply()
-                loadTypesForSpace()
-                updateUI()
-            }
-            .show()
-    }
-
-    private fun showTypeSelector() {
-        if (types.isEmpty()) {
-            showToast("Connect first to load types")
-            return
-        }
-
-        val names = types.map { it.name }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Select Type")
-            .setItems(names) { _, which ->
-                val type = types[which]
-                selectedTypeKey = type.key
-                selectedTypeName = type.name
-                prefs.edit()
-                    .putString("type_key", selectedTypeKey)
-                    .putString("type_name", selectedTypeName)
-                    .apply()
-                updateUI()
-            }
-            .show()
+    private fun closeWindow() {
+        sendBroadcast(Intent("com.gemnote.FLOATING_CLOSED"))
+        finish()
     }
 
     // ========== Network ==========
@@ -368,19 +262,20 @@ class MainActivity : AppCompatActivity() {
         if (savedUrl.isNotEmpty()) {
             activityScope.launch {
                 if (tryConnect(savedUrl)) {
-                    runOnUiThread { updateUI() }
+                    handler.post { updateUI() }
                 }
             }
         }
     }
 
-    private fun autoScanNetwork(apiKey: String) {
+    private fun autoScanNetwork() {
+        val apiKey = getApiKey()
+        if (apiKey.isEmpty()) return
+
         val subnet = getLocalSubnet() ?: run {
             showToast("Not on WiFi")
             return
         }
-
-        showToast("Scanning network...")
 
         activityScope.launch {
             var foundUrl: String? = null
@@ -402,10 +297,10 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("base_url", foundUrl).apply()
                 if (tryConnect(foundUrl!!)) {
                     showToast("Connected!")
-                    runOnUiThread { updateUI() }
+                    handler.post { updateUI() }
                 }
             } else {
-                showToast("Anytype not found")
+                showToast("Not found")
             }
         }
     }
@@ -434,28 +329,10 @@ class MainActivity : AppCompatActivity() {
                         .putString("space_name", selectedSpaceName)
                         .apply()
                 }
-                loadTypesForSpace()
                 true
             } else false
         } catch (e: Exception) {
             false
-        }
-    }
-
-    private fun loadTypesForSpace() {
-        if (selectedSpaceId.isEmpty()) return
-
-        activityScope.launch {
-            try {
-                val response = withContext(Dispatchers.IO) {
-                    createApi(getBaseUrl(), getApiKey()).getTypes(selectedSpaceId)
-                }
-                if (response.isSuccessful) {
-                    types = response.body()?.data ?: emptyList()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
         }
     }
 
@@ -473,11 +350,11 @@ class MainActivity : AppCompatActivity() {
 
         activityScope.launch {
             try {
-                val request = CreateObjectRequest(
+                val request = FCreateRequest(
                     name = title,
                     typeKey = selectedTypeKey,
                     body = body,
-                    icon = ObjectIcon(emoji = "📝", format = "emoji")
+                    icon = FIcon(emoji = "📝", format = "emoji")
                 )
                 val response = withContext(Dispatchers.IO) {
                     createApi(getBaseUrl(), getApiKey()).createObject(selectedSpaceId, request)
@@ -486,7 +363,7 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     entry.isSynced = true
                     saveEntries()
-                    runOnUiThread { updateUI() }
+                    handler.post { updateUI() }
                     showToast("Sent!")
                 } else {
                     showToast("Failed")
@@ -497,7 +374,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createApi(baseUrl: String, apiKey: String): AnytypeApi {
+    private fun createApi(baseUrl: String, apiKey: String): FApi {
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder()
@@ -514,52 +391,30 @@ class MainActivity : AppCompatActivity() {
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(AnytypeApi::class.java)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        loadEntries()
-        updateUI()
+            .create(FApi::class.java)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         activityScope.cancel()
-        unregisterReceiver(floatingClosedReceiver)
     }
 }
 
 // Data classes
-data class ClipEntry(
-    val id: Long,
-    val content: String,
-    val preview: String,
-    val timestamp: Long,
-    var isSynced: Boolean = false
-)
-
-data class Space(val id: String, val name: String)
-data class ObjectType(
-    @SerializedName("unique_key") val key: String,
-    val name: String
-)
-data class ApiResponse<T>(val data: T?)
-data class ObjectIcon(val emoji: String? = null, val format: String? = null)
-data class CreateObjectRequest(
+data class FSpace(val id: String, val name: String)
+data class FResponse<T>(val data: T?)
+data class FIcon(val emoji: String? = null, val format: String? = null)
+data class FCreateRequest(
     val name: String,
     @SerializedName("type_key") val typeKey: String,
     val body: String? = null,
-    val icon: ObjectIcon? = null
+    val icon: FIcon? = null
 )
 
-interface AnytypeApi {
+interface FApi {
     @GET("v1/spaces")
-    suspend fun getSpaces(): retrofit2.Response<ApiResponse<List<Space>>>
-
-    @GET("v1/spaces/{spaceId}/types")
-    suspend fun getTypes(@Path("spaceId") spaceId: String): retrofit2.Response<ApiResponse<List<ObjectType>>>
+    suspend fun getSpaces(): retrofit2.Response<FResponse<List<FSpace>>>
 
     @POST("v1/spaces/{spaceId}/objects")
-    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: CreateObjectRequest): retrofit2.Response<Any>
+    suspend fun createObject(@Path("spaceId") spaceId: String, @Body request: FCreateRequest): retrofit2.Response<Any>
 }

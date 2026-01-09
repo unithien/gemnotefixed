@@ -32,6 +32,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".FloatingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Floating"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:configChanges="orientation|screenSize" />
+
         <service
             android:name=".ClipboardService"
             android:exported="false"

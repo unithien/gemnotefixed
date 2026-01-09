@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.GemNote" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">#6200EE</item>
-        <item name="colorPrimaryDark">#3700B3</item>
-        <item name="colorAccent">#03DAC5</item>
+    <style name="Theme.GemNote" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#6B4EAA</item>
+        <item name="colorPrimaryVariant">#5A3E99</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#8B6ECA</item>
+        <item name="android:statusBarColor">#6B4EAA</item>
+    </style>
+
+    <style name="Theme.Floating" parent="Theme.MaterialComponents.Light.Dialog">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="colorPrimary">#6B4EAA</item>
     </style>
 </resources>

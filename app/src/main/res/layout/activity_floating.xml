@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="320dp"
+    android:layout_height="450dp"
+    android:orientation="vertical"
+    android:background="@drawable/float_bg"
+    android:elevation="8dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:background="@drawable/header_bg">
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="GemNote"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnPaste"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:text="+"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_header"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="C"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_header"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/btnType"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="T"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_header"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/btnClose"
+            android:layout_width="40dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="X"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:background="@android:color/transparent"
+            android:stateListAnimator="@null" />
+
+    </LinearLayout>
+
+    <!-- Content Area -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#F5F0FF"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/entriesContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="10dp" />
+
+    </ScrollView>
+
+    <!-- Bottom Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="10dp"
+        android:background="#FFFFFF">
+
+        <Button
+            android:id="@+id/btnPasteBottom"
+            android:layout_width="60dp"
+            android:layout_height="44dp"
+            android:text="+"
+            android:textColor="#6B4EAA"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_action"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/btnConnectBottom"
+            android:layout_width="60dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:text="C"
+            android:textColor="#6B4EAA"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_action"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/btnTypeBottom"
+            android:layout_width="60dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:text="T"
+            android:textColor="#6B4EAA"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_action"
+            android:stateListAnimator="@null" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/countText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#999999"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+</LinearLayout>
