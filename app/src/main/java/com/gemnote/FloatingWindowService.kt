@@ -9,19 +9,23 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -58,7 +62,8 @@ class FloatingWindowService : Service() {
     }
 
     private var windowManager: WindowManager? = null
-    private var floatingView: View? = null
+    private var mainWindow: View? = null
+    private var bottomBarWindow: View? = null
     private lateinit var prefs: SharedPreferences
     
     private val entries = mutableListOf<ClipEntry>()
@@ -80,8 +85,14 @@ class FloatingWindowService : Service() {
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+    
+    private var windowX = 80
+    private var windowY = 150
+    private var windowWidth = 300
+    private var windowHeight = 450
 
-    private var layoutParams: WindowManager.LayoutParams? = null
+    private var mainParams: WindowManager.LayoutParams? = null
+    private var bottomParams: WindowManager.LayoutParams? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -99,7 +110,7 @@ class FloatingWindowService : Service() {
             loadEntries()
             
             handler.postDelayed({
-                createFloatingWindow()
+                createWindows()
                 if (getApiKey().isNotEmpty()) {
                     autoConnect()
                 }
@@ -165,27 +176,11 @@ class FloatingWindowService : Service() {
         prefs.edit().putString("entries", Gson().toJson(entries)).apply()
     }
 
-    private fun createFloatingWindow() {
-        // Use LayoutInflater to inflate XML layout
-        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        floatingView = inflater.inflate(R.layout.floating_window, null)
-        
-        // Get views using findViewById
-        statusText = floatingView?.findViewById(R.id.statusText)
-        entriesContainer = floatingView?.findViewById(R.id.entriesContainer)
-        
-        val header = floatingView?.findViewById<View>(R.id.header)
-        val closeBtn = floatingView?.findViewById<Button>(R.id.closeBtn)
-        val pasteBtn = floatingView?.findViewById<Button>(R.id.pasteBtn)
-        val connectBtn = floatingView?.findViewById<Button>(R.id.connectBtn)
-        val typeBtn = floatingView?.findViewById<Button>(R.id.typeBtn)
-        val resizeHandle = floatingView?.findViewById<View>(R.id.resizeHandle)
-        
-        // Set click listeners
-        closeBtn?.setOnClickListener { closeFloatingWindow() }
-        pasteBtn?.setOnClickListener { pasteFromClipboard() }
-        connectBtn?.setOnClickListener { onConnectClick() }
-        typeBtn?.setOnClickListener { showToast("Type: $selectedTypeName") }
+    private fun createWindows() {
+        val purple = Color.parseColor("#6B4EAA")
+        val lightPurple = Color.parseColor("#F5F0FF")
+        val btnBg = Color.parseColor("#E8E0F0")
+        val white = Color.WHITE
         
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -194,46 +189,191 @@ class FloatingWindowService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         
-        layoutParams = WindowManager.LayoutParams(
-            dpToPx(300),
-            dpToPx(450),
+        // ===== MAIN WINDOW (Header + Content + Resize) =====
+        val mainLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = createRoundedDrawable(white, 16f)
+            elevation = 12f
+        }
+        
+        // Header
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(purple)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(8), dpToPx(10))
+        }
+        
+        statusText = TextView(this).apply {
+            text = "GemNote"
+            setTextColor(white)
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        header.addView(statusText)
+        
+        val closeBtn = createButton("X", white, Color.TRANSPARENT, 50, 40)
+        closeBtn.setOnClickListener { closeFloatingWindow() }
+        header.addView(closeBtn)
+        
+        mainLayout.addView(header, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        
+        // Content
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(lightPurple)
+            isVerticalScrollBarEnabled = false
+        }
+        
+        entriesContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+        }
+        
+        scrollView.addView(entriesContainer)
+        mainLayout.addView(scrollView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        
+        // Space for bottom bar (will be separate window)
+        val bottomSpacer = View(this).apply {
+            setBackgroundColor(white)
+        }
+        mainLayout.addView(bottomSpacer, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(68)
+        ))
+        
+        // Resize Handle
+        val resizeHandle = TextView(this).apply {
+            text = "="
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#9080C0"))
+            setBackgroundColor(Color.parseColor("#E8E0F0"))
+        }
+        mainLayout.addView(resizeHandle, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(20)
+        ))
+        
+        mainWindow = mainLayout
+        
+        mainParams = WindowManager.LayoutParams(
+            dpToPx(windowWidth),
+            dpToPx(windowHeight),
             layoutFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 80
-            y = 150
+            x = windowX
+            y = windowY
         }
         
-        windowManager?.addView(floatingView, layoutParams)
+        windowManager?.addView(mainWindow, mainParams)
         
-        header?.let { setupDrag(it) }
-        resizeHandle?.let { setupResize(it) }
+        setupDrag(header)
+        setupResize(resizeHandle)
+        
+        // ===== BOTTOM BAR WINDOW (Separate for reliable touch) =====
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(white)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
+        }
+        
+        val pasteBtn = createButton("+", purple, btnBg, 56, 48)
+        pasteBtn.setOnClickListener { pasteFromClipboard() }
+        bottomBar.addView(pasteBtn)
+        
+        val connectBtn = createButton("C", purple, btnBg, 56, 48)
+        (connectBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
+        connectBtn.setOnClickListener { onConnectClick() }
+        bottomBar.addView(connectBtn)
+        
+        val typeBtn = createButton("T", purple, btnBg, 56, 48)
+        (typeBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
+        typeBtn.setOnClickListener { showToast("Type: $selectedTypeName") }
+        bottomBar.addView(typeBtn)
+        
+        bottomBarWindow = bottomBar
+        
+        bottomParams = WindowManager.LayoutParams(
+            dpToPx(windowWidth),
+            dpToPx(68),
+            layoutFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = windowX
+            y = windowY + dpToPx(windowHeight) - dpToPx(88) // Position over the spacer
+        }
+        
+        windowManager?.addView(bottomBarWindow, bottomParams)
         
         updateEntriesUI()
         updateStatus()
+    }
+    
+    private fun createButton(text: String, textColor: Int, bgColor: Int, widthDp: Int, heightDp: Int): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(textColor)
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            if (bgColor != Color.TRANSPARENT) {
+                background = createRoundedDrawable(bgColor, 8f)
+            }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(widthDp), dpToPx(heightDp))
+            isClickable = true
+            isFocusable = true
+        }
+    }
+    
+    private fun createRoundedDrawable(color: Int, radius: Float): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dpToPx(radius.toInt()).toFloat()
+        }
     }
     
     private fun dpToPx(dp: Int): Int {
         return (dp * resources.displayMetrics.density).toInt()
     }
     
+    private fun updateWindowPositions() {
+        val wm = windowManager ?: return
+        
+        mainParams?.let { params ->
+            params.x = windowX
+            params.y = windowY
+            params.width = dpToPx(windowWidth)
+            params.height = dpToPx(windowHeight)
+            mainWindow?.let { wm.updateViewLayout(it, params) }
+        }
+        
+        bottomParams?.let { params ->
+            params.x = windowX
+            params.y = windowY + dpToPx(windowHeight) - dpToPx(88)
+            params.width = dpToPx(windowWidth)
+            bottomBarWindow?.let { wm.updateViewLayout(it, params) }
+        }
+    }
+    
     private fun setupDrag(dragView: View) {
         var isDragging = false
         
         dragView.setOnTouchListener { _, event ->
-            val params = layoutParams ?: return@setOnTouchListener false
-            val wm = windowManager ?: return@setOnTouchListener false
-            val view = floatingView ?: return@setOnTouchListener false
-            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     isDragging = false
-                    initialX = params.x
-                    initialY = params.y
+                    initialX = windowX
+                    initialY = windowY
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     true
@@ -245,9 +385,9 @@ class FloatingWindowService : Service() {
                         isDragging = true
                     }
                     if (isDragging) {
-                        params.x = initialX + dx.toInt()
-                        params.y = initialY + dy.toInt()
-                        wm.updateViewLayout(view, params)
+                        windowX = initialX + dx.toInt()
+                        windowY = initialY + dy.toInt()
+                        updateWindowPositions()
                     }
                     true
                 }
@@ -258,10 +398,6 @@ class FloatingWindowService : Service() {
     
     private fun setupResize(resizeView: View) {
         resizeView.setOnTouchListener { _, event ->
-            val params = layoutParams ?: return@setOnTouchListener false
-            val wm = windowManager ?: return@setOnTouchListener false
-            val view = floatingView ?: return@setOnTouchListener false
-            
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialTouchX = event.rawX
@@ -272,9 +408,10 @@ class FloatingWindowService : Service() {
                     val deltaX = (event.rawX - initialTouchX).toInt()
                     val deltaY = (event.rawY - initialTouchY).toInt()
                     
-                    params.width = (params.width + deltaX).coerceIn(dpToPx(250), dpToPx(450))
-                    params.height = (params.height + deltaY).coerceIn(dpToPx(350), dpToPx(650))
-                    wm.updateViewLayout(view, params)
+                    windowWidth = ((windowWidth * resources.displayMetrics.density + deltaX) / resources.displayMetrics.density).toInt().coerceIn(250, 450)
+                    windowHeight = ((windowHeight * resources.displayMetrics.density + deltaY) / resources.displayMetrics.density).toInt().coerceIn(350, 650)
+                    
+                    updateWindowPositions()
                     
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
@@ -304,32 +441,80 @@ class FloatingWindowService : Service() {
         container.removeAllViews()
         
         if (entries.isEmpty()) {
-            val emptyText = TextView(this).apply {
+            container.addView(TextView(this).apply {
                 text = "No entries yet\n\nCopy text, then tap + to paste"
-                setTextColor(0xFF888888.toInt())
+                setTextColor(Color.parseColor("#888888"))
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setPadding(dpToPx(16), dpToPx(50), dpToPx(16), dpToPx(50))
-            }
-            container.addView(emptyText)
+            })
             return
         }
         
-        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+        val purple = Color.parseColor("#6B4EAA")
+        val btnBg = Color.parseColor("#E8E0F0")
         
         for (entry in entries) {
-            val cardView = inflater.inflate(R.layout.entry_card, container, false)
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = createRoundedDrawable(Color.WHITE, 8f)
+                setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+                elevation = 2f
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dpToPx(8) }
+            }
             
-            cardView.findViewById<TextView>(R.id.timestampText).text = dateFormat.format(Date(entry.timestamp))
-            cardView.findViewById<TextView>(R.id.previewText).text = entry.preview
+            // Header row
+            val headerRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             
-            val syncedText = cardView.findViewById<TextView>(R.id.syncedText)
-            syncedText.visibility = if (entry.isSynced) View.VISIBLE else View.GONE
+            headerRow.addView(TextView(this).apply {
+                text = dateFormat.format(Date(entry.timestamp))
+                setTextColor(Color.parseColor("#999999"))
+                textSize = 11f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
             
-            cardView.findViewById<Button>(R.id.sendBtn).setOnClickListener { sendToAnytype(entry) }
-            cardView.findViewById<Button>(R.id.deleteBtn).setOnClickListener { deleteEntry(entry) }
+            if (entry.isSynced) {
+                headerRow.addView(TextView(this).apply {
+                    text = "✓ Synced"
+                    setTextColor(Color.parseColor("#4CAF50"))
+                    textSize = 11f
+                })
+            }
             
-            container.addView(cardView)
+            card.addView(headerRow)
+            
+            // Preview
+            card.addView(TextView(this).apply {
+                text = entry.preview
+                setTextColor(Color.parseColor("#333333"))
+                textSize = 13f
+                maxLines = 2
+                setPadding(0, dpToPx(6), 0, dpToPx(8))
+            })
+            
+            // Buttons row
+            val buttonsRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            
+            val sendBtn = createButton("S", purple, btnBg, 56, 44)
+            sendBtn.setOnClickListener { sendToAnytype(entry) }
+            buttonsRow.addView(sendBtn)
+            
+            val deleteBtn = createButton("D", purple, btnBg, 56, 44)
+            (deleteBtn.layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(8)
+            deleteBtn.setOnClickListener { deleteEntry(entry) }
+            buttonsRow.addView(deleteBtn)
+            
+            card.addView(buttonsRow)
+            
+            container.addView(card)
         }
     }
     
@@ -544,7 +729,10 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        floatingView?.let { 
+        mainWindow?.let { 
+            try { windowManager?.removeView(it) } catch (e: Exception) {}
+        }
+        bottomBarWindow?.let { 
             try { windowManager?.removeView(it) } catch (e: Exception) {}
         }
     }
