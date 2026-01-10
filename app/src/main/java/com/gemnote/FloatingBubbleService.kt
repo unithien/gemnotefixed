@@ -92,6 +92,13 @@ class FloatingBubbleService : Service() {
     private var initialTouchX = 0f
     private var initialTouchY = 0f
 
+    // Clipboard monitoring
+    private var clipboardManager: ClipboardManager? = null
+    private var lastClipboardText: String? = null
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        onClipboardChanged()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -105,6 +112,13 @@ class FloatingBubbleService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
         
+        // Setup clipboard monitoring
+        clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
+        
+        // Store current clipboard to avoid adding it on start
+        lastClipboardText = getCurrentClipboardText()
+        
         handler.postDelayed({
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             createFloatingWindow()
@@ -113,6 +127,83 @@ class FloatingBubbleService : Service() {
                 autoConnect()
             }
         }, 300)
+    }
+
+    private fun getCurrentClipboardText(): String? {
+        return try {
+            val clip = clipboardManager?.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                clip.getItemAt(0).text?.toString()
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun onClipboardChanged() {
+        // Small delay to ensure clipboard is accessible
+        handler.postDelayed({
+            readClipboardAndAdd()
+        }, 150)
+    }
+
+    private fun readClipboardAndAdd() {
+        // If minimized to bubble, we need special handling
+        if (isMinimized) {
+            // Try to read clipboard directly first
+            val text = getCurrentClipboardText()
+            if (text != null && text.isNotBlank() && text != lastClipboardText) {
+                lastClipboardText = text
+                addEntryFromClipboard(text)
+            }
+            return
+        }
+
+        // For visible floating window, temporarily make focusable
+        params?.flags = params?.flags?.and(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()) ?: 0
+        try {
+            windowManager?.updateViewLayout(floatingView, params)
+        } catch (e: Exception) { }
+        
+        handler.postDelayed({
+            try {
+                val text = getCurrentClipboardText()
+                if (text != null && text.isNotBlank() && text != lastClipboardText) {
+                    lastClipboardText = text
+                    addEntryFromClipboard(text)
+                }
+            } finally {
+                // Revert to not focusable
+                params?.flags = params?.flags?.or(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) ?: WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                try {
+                    windowManager?.updateViewLayout(floatingView, params)
+                } catch (e: Exception) { }
+            }
+        }, 100)
+    }
+
+    private fun addEntryFromClipboard(content: String) {
+        if (content.isBlank()) return
+        if (entries.any { it.content == content }) {
+            // Already exists, skip silently
+            return
+        }
+
+        val preview = content.take(100).replace("\n", " ")
+        entries.add(0, ClipEntry(
+            id = System.currentTimeMillis(),
+            content = content,
+            preview = preview,
+            timestamp = System.currentTimeMillis()
+        ))
+
+        if (entries.size > 50) entries.removeLast()
+
+        saveEntries()
+        handler.post { 
+            updateEntriesUI()
+            showToast("Clipboard captured!")
+        }
     }
 
     private fun createNotificationChannel() {
@@ -135,7 +226,7 @@ class FloatingBubbleService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("GemNote")
-            .setContentText("Floating window active")
+            .setContentText("Clipboard monitoring active")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -422,7 +513,7 @@ class FloatingBubbleService : Service() {
 
         if (entries.isEmpty()) {
             container.addView(TextView(this).apply {
-                text = "No entries\n\nTap + to paste"
+                text = "No entries\n\nCopy text anywhere\nto auto-capture"
                 setTextColor(Color.parseColor("#888888"))
                 textSize = 13f
                 gravity = Gravity.CENTER
@@ -679,6 +770,7 @@ class FloatingBubbleService : Service() {
 
         saveEntries()
         updateEntriesUI()
+        lastClipboardText = content // Update last clipboard to avoid duplicate from listener
         showToast("Added!")
     }
 
@@ -850,6 +942,10 @@ class FloatingBubbleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        
+        // Remove clipboard listener
+        clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
+        
         serviceScope.cancel()
         floatingView?.let {
             try { windowManager?.removeView(it) } catch (e: Exception) { }
